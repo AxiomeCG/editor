@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { type AnyNode, DoorNode, registerNode, sceneRegistry } from '@pascal-app/core'
+import {
+  type AnyNode,
+  type AnyNodeDefinition,
+  DoorNode,
+  nodeRegistry,
+  registerNode,
+  sceneRegistry,
+} from '@pascal-app/core'
 import { buildDoorPreviewMesh } from '@pascal-app/viewer'
 import * as THREE from 'three'
 import type { GLTFWriter } from 'three/examples/jsm/exporters/GLTFExporter.js'
@@ -86,6 +93,86 @@ describe('prepareSceneForExport', () => {
     expect(material.roughness).toBeCloseTo(0.3)
     expect(material.metalness).toBeCloseTo(0.7)
     expect(material.color.getHexString()).toBe('cc3300')
+  })
+
+  test('replaces only the cloned registered subtree with bake-only geometry', () => {
+    const restoreRegistry = nodeRegistry._snapshot()
+    try {
+      let receivedParentId: string | null | undefined
+      registerNode({
+        kind: 'test:bake-geometry',
+        schemaVersion: 1,
+        schema: DoorNode,
+        category: 'utility',
+        defaults: () => ({}) as never,
+        capabilities: {},
+        bake: 'replace',
+        bakeGeometry: (_node, context) => {
+          receivedParentId = context.parent?.id
+          const group = new THREE.Group()
+          const instances = new THREE.InstancedMesh(
+            new THREE.BoxGeometry(0.1, 1, 0.1),
+            new THREE.MeshStandardMaterial({ color: '#228833' }),
+            1,
+          )
+          instances.name = 'baked-instance'
+          instances.setMatrixAt(0, new THREE.Matrix4().makeTranslation(4, 0, 2))
+          group.add(instances)
+          return group
+        },
+      } as AnyNodeDefinition)
+
+      const root = new THREE.Group()
+      const liveGroup = new THREE.Group()
+      liveGroup.position.set(2, 0, 3)
+      const liveMesh = meshWithNodeMaterial(nodeMaterial())
+      liveMesh.name = 'live-procedural-candidate'
+      liveGroup.add(liveMesh)
+      const before = meshWithNodeMaterial(nodeMaterial())
+      before.name = 'before-bake-replacement'
+      const after = meshWithNodeMaterial(nodeMaterial())
+      after.name = 'after-bake-replacement'
+      root.add(before, liveGroup, after)
+
+      const siteId = 'site_bake'
+      const grassId = 'grass_bake'
+      sceneRegistry.nodes.set(grassId, liveGroup)
+      const nodes = {
+        [siteId]: {
+          object: 'node',
+          id: siteId,
+          type: 'site',
+          parentId: null,
+          children: [grassId],
+        } as unknown as AnyNode,
+        [grassId]: {
+          object: 'node',
+          id: grassId,
+          type: 'test:bake-geometry',
+          parentId: siteId,
+          visible: true,
+        } as unknown as AnyNode,
+      }
+
+      const { scene } = prepareSceneForExport(root, nodes)
+      const exported = scene.getObjectByName(grassId)
+      const baked = exported?.getObjectByName('baked-instance')
+
+      expect(receivedParentId).toBe(siteId)
+      expect(liveGroup.getObjectByName('live-procedural-candidate')).toBe(liveMesh)
+      expect(scene.getObjectByName('live-procedural-candidate')).toBeUndefined()
+      expect(exported?.position.toArray()).toEqual([2, 0, 3])
+      expect(scene.children.map((child) => child.name)).toEqual([
+        'before-bake-replacement',
+        grassId,
+        'after-bake-replacement',
+      ])
+      expect((baked as THREE.InstancedMesh | undefined)?.isInstancedMesh).toBe(true)
+      expect((baked as THREE.InstancedMesh | undefined)?.count).toBe(1)
+      expect(((baked as THREE.InstancedMesh).material as THREE.Material).isMaterial).toBe(true)
+    } finally {
+      restoreRegistry()
+    }
   })
 
   test('shared NodeMaterial instances convert to a single shared material', () => {

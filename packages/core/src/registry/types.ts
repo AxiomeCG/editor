@@ -241,6 +241,8 @@ export type DimensionTextPosition = 'above' | 'centered'
 export type FloorplanStyle = {
   stroke?: string
   fill?: string
+  /** Winding rule for compound paths. `evenodd` keeps nested contour rings hollow. */
+  fillRule?: 'nonzero' | 'evenodd'
   strokeWidth?: number
   strokeDasharray?: string
   opacity?: number
@@ -360,6 +362,8 @@ export type ToolHintChip = {
   /** Hover tooltip, e.g. 'Placement type — click or press I to cycle'. */
   tooltip?: string
 }
+
+export type FloorplanScope = 'level' | 'building' | 'site'
 
 export type FloorplanGeometry =
   | ({ kind: 'path'; d: string } & FloorplanStyle)
@@ -1029,6 +1033,18 @@ export type NodeDefinition<S extends ZodObject<any>> = {
 
   /** GLB bake treatment for this kind (default `'static'`). See {@link BakePolicy}. */
   bake?: BakePolicy
+  /**
+   * Optional export-only geometry builder. The GLB exporter calls this against
+   * persisted scene data and replaces the registered node's cloned subtree
+   * with the returned local-space Object3D. The live editor object is never
+   * passed to the hook or mutated.
+   *
+   * Use this when the live geometry is unsuitable for a portable GLB (for
+   * example, a procedural NodeMaterial that masks a maximum candidate
+   * population on the GPU). The returned tree must be a complete static
+   * snapshot for this node and use exporter-supported Three.js materials.
+   */
+  bakeGeometry?: BakeGeometryBuilder<z.infer<S>>
 
   /**
    * Renderer for this kind. Optional under the three-checkbox composition
@@ -1125,8 +1141,9 @@ export type NodeDefinition<S extends ZodObject<any>> = {
   /**
    * Pure 2D builder for floor-plan rendering. Mirrors `geometry` but emits
    * plain `FloorplanGeometry` data (SVG-renderable) rather than three.js
-   * Object3D. Coordinates are level-local meters — the floor-plan panel
-   * applies the world→SVG transform.
+   * Object3D. Level- and building-scoped builders emit building-local metres.
+   * Site-scoped builders emit site-local metres; the floor-plan layer projects
+   * their output into the active building's plan coordinates.
    *
    * Returns `null` when the kind shouldn't appear in floor plan (e.g. an
    * invisible utility node, or a kind that's 3D-only). Kinds that need
@@ -1151,8 +1168,11 @@ export type NodeDefinition<S extends ZodObject<any>> = {
    * building). For `'building'`-scoped kinds the layer iterates every
    * instance whose parent matches the active level's building, and
    * synthesises a `GeometryContext` whose `parent` is the active level.
+   * `'site'` discovers direct children of the active building's Site,
+   * supplies the real Site as `ctx.parent`, and projects site-local output
+   * into the active building's plan coordinates below level architecture.
    */
-  floorplanScope?: 'level' | 'building'
+  floorplanScope?: FloorplanScope
   /**
    * 2D drag affordances keyed by the string identifier emitted on
    * `endpoint-handle` (and similar interactive floor-plan primitives) via
@@ -1485,6 +1505,8 @@ export type BakeReplaceRenderer<N> = {
   module: () => Promise<{ default: ComponentType<{ nodes: N[] }> }>
 }
 
+export type BakeGeometryBuilder<N> = (node: N, ctx: GeometryContext) => Object3D
+
 export type AssetRef = {
   id: string
   src: string
@@ -1534,6 +1556,13 @@ export type Capabilities = {
   deletable?: boolean
   groupable?: boolean
   selectable?: SelectableConfig
+  /**
+   * Whether selecting this kind should replace its rendered mesh materials
+   * with the editor's selection tint. Defaults to `true`. Set to `false` for
+   * hidden interaction nodes whose rendered geometry must retain its authored
+   * materials while the node remains selected (for example, paint layers).
+   */
+  selectionHighlight?: boolean
   interactive?: boolean
   floorPlaced?: FloorPlacedConfig
   /**

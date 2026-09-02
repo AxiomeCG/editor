@@ -1,8 +1,10 @@
 import {
   type AnyNode,
+  type AnyNodeId,
   bakePolicyOf,
   type DoorNode,
   emitter,
+  type GeometryContext,
   getLevelDisplayName,
   isOperationDoorType,
   itemClipRegistry,
@@ -199,6 +201,8 @@ export function prepareSceneForExport(
     pruneHiddenSceneNodes(cloneByOriginal, nodes)
   }
 
+  replaceBakeGeometry(scene, cloneByOriginal, nodes)
+
   // Object3Ds that carry node identity — never strip these even when they sit on
   // a non-scene layer. Some are metadata-only: a zone's visible fill/wall meshes
   // are stripped, but its identity node stays to carry the polygon that /viewer
@@ -219,6 +223,78 @@ export function prepareSceneForExport(
   stampIdentity(scene, retainedCloneByOriginal, nodes, clipNamesByNode)
 
   return { scene, animations: clips }
+}
+
+function replaceBakeGeometry(
+  scene: THREE.Object3D,
+  cloneByOriginal: Map<THREE.Object3D, THREE.Object3D>,
+  nodes: Record<string, AnyNode>,
+): void {
+  for (const [id, original] of sceneRegistry.nodes) {
+    const node = nodes[id]
+    if (!node) continue
+    const builder = nodeRegistry.get(node.type)?.bakeGeometry
+    if (!builder) continue
+
+    const cloned = cloneByOriginal.get(original)
+    if (!cloned || !isDescendantOf(cloned, scene)) continue
+    const parent = cloned.parent
+    if (!parent) {
+      throw new Error(`Cannot replace root export geometry for node ${id}`)
+    }
+    const siblingIndex = parent.children.indexOf(cloned)
+
+    const replacement = builder(node, buildBakeGeometryContext(node, nodes))
+    if (replacement === cloned || replacement.parent) {
+      throw new Error(`bakeGeometry for ${node.type} must return a new detached Object3D`)
+    }
+
+    replacement.position.copy(cloned.position)
+    replacement.quaternion.copy(cloned.quaternion)
+    replacement.scale.copy(cloned.scale)
+    replacement.matrix.copy(cloned.matrix)
+    replacement.matrixAutoUpdate = cloned.matrixAutoUpdate
+    replacement.visible = cloned.visible
+    replacement.layers.mask = cloned.layers.mask
+    replacement.renderOrder = cloned.renderOrder
+
+    parent.remove(cloned)
+    parent.add(replacement)
+    const appendedIndex = parent.children.indexOf(replacement)
+    parent.children.splice(appendedIndex, 1)
+    parent.children.splice(siblingIndex, 0, replacement)
+    cloneByOriginal.set(original, replacement)
+  }
+}
+
+function buildBakeGeometryContext(node: AnyNode, nodes: Record<string, AnyNode>): GeometryContext {
+  const resolve = <N = AnyNode>(id: AnyNodeId): N | undefined => nodes[id] as N | undefined
+  const childIds = Array.isArray((node as { children?: AnyNodeId[] }).children)
+    ? (node as { children: AnyNodeId[] }).children
+    : []
+  const children = childIds
+    .map((id) => nodes[id])
+    .filter((child): child is AnyNode => child !== undefined)
+  const parent = node.parentId ? (nodes[node.parentId] ?? null) : null
+  const siblingIds =
+    parent && Array.isArray((parent as { children?: AnyNodeId[] }).children)
+      ? (parent as { children: AnyNodeId[] }).children
+      : []
+  const siblings = siblingIds
+    .filter((id) => id !== node.id)
+    .map((id) => nodes[id])
+    .filter((sibling): sibling is AnyNode => sibling?.type === node.type)
+
+  return { resolve, children, siblings, parent }
+}
+
+function isDescendantOf(object: THREE.Object3D, ancestor: THREE.Object3D): boolean {
+  let current: THREE.Object3D | null = object
+  while (current) {
+    if (current === ancestor) return true
+    current = current.parent
+  }
+  return false
 }
 
 function pruneHiddenSceneNodes(

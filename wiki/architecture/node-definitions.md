@@ -84,6 +84,59 @@ type GeometryContext = {
 
 For level-scoped batch data (wall mitering across an entire level), `ctx` can be extended with `ctx.levelData?.miters` in a future revision — decided alongside the wall migration (Phase 3 of the registry plan).
 
+## Floor-plan scope
+
+`def.floorplan` is a pure `FloorplanGeometry` builder over the same
+`GeometryContext` shape. `def.floorplanScope` controls discovery:
+
+| Scope | Persisted parent | Builder coordinates | `ctx.parent` |
+|---|---|---|---|
+| `'level'` (default) | active level subtree | building-local metres | semantic parent |
+| `'building'` | active building | building-local metres | active level |
+| `'site'` | active building's Site | site-local metres | real Site |
+
+The floor-plan layer applies the inverse active-building transform to
+site-scoped output and paints that output below level architecture. A plugin
+therefore keeps one semantic Site child while the same representation appears
+from every level of every building on that Site. Scope discovery is
+registry-driven; editor code must not name plugin kinds.
+
+`FloorplanStyle.fillRule` is the winding rule for compound contours. Use
+`'evenodd'` when nested rings represent holes; both the interactive SVG
+renderer and PDFKit export preserve it. `FloorplanImage.url` may also be an
+inline `data:` URL, which PDF export passes directly to PDFKit rather than
+through the asset resolver.
+
+## Export-only geometry
+
+`def.bakeGeometry(node, ctx)` replaces the registered node's cloned subtree
+only inside `prepareSceneForExport()`. It exists for procedural runtime trees
+whose live GPU representation is not a faithful portable artifact—for example,
+an instanced maximum population masked by a TSL material.
+
+The hook receives persisted scene data through `GeometryContext` and returns a
+new detached, local-space `Object3D`. That return value is the complete static
+snapshot for the node. It must use geometry and materials supported by
+`GLTFExporter`; the exporter preserves the registered node's transform and
+identity. The live editor tree is neither passed to the hook nor mutated.
+
+Use `bake: 'replace'` with `bakeGeometry` when the generic GLB should retain the
+portable static snapshot while Pascal's baked viewer hides it and mounts
+`bakeReplaceRenderer` for the richer live result.
+
+## Selection presentation
+
+`capabilities.selectionHighlight` controls only the Editor's material-based
+selection and hover presentation. It defaults to `true`, including for legacy
+and unregistered kinds. Set it to `false` when a node must stay semantically
+selected while its rendered subtree keeps plugin-authored materials—for
+example, a paint layer whose NodeMaterial carries the result being edited.
+
+The selection manager and outliner query this capability through the registry,
+including after late plugin registration. The capability does not change
+selectability, inspector ownership, tool activation, keyboard behavior or
+deletion policy. Host code must not special-case the opting-out kind.
+
 ## Choosing the right combination
 
 ### `geometry` only
