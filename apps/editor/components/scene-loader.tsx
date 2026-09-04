@@ -9,6 +9,8 @@ import {
   type SceneGraph,
   type SidebarTab,
 } from '@pascal-app/editor'
+import { AtmosphereLayer, SurroundingsLayer } from '@pascal-app/plugin-environment'
+import { SceneAtmosphere, SceneGroundReplacement } from '@pascal-app/viewer'
 import { Hammer, Layers, Settings } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -301,6 +303,12 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
         onThumbnailCapture={handleThumb}
         projectId={meta.projectId ?? 'default'}
         sidebarTabs={SIDEBAR_TABS}
+        viewerSceneSlot={
+          <>
+            <AtmosphereLayer atmosphereComponent={SceneAtmosphere} />
+            <SurroundingsLayer groundReplacementComponent={SceneGroundReplacement} />
+          </>
+        }
         viewerToolbarLeft={<CommunityViewerToolbarLeft />}
         viewerToolbarRight={<CommunityViewerToolbarRight />}
       />

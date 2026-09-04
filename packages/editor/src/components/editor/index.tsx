@@ -788,7 +788,7 @@ const ViewerSceneContent = memo(function ViewerSceneContent({
       <ThumbnailGenerator onThumbnailCapture={onThumbnailCapture} />
       {!isFirstPersonMode && <SiteEdgeLabels />}
       <InteractiveSystem />
-      {!noEditing && viewerSceneSlot}
+      {viewerSceneSlot}
     </>
   )
 })
@@ -1417,6 +1417,7 @@ export default function Editor({
       <CustomCameraControls />
       <ThumbnailGenerator onThumbnailCapture={onThumbnailCapture} />
       <InteractiveSystem />
+      {viewerSceneSlot}
     </Viewer>
   )
 

@@ -31,6 +31,7 @@ const nextConfig: NextConfig = {
     '@pascal-app/viewer',
     '@pascal-app/core',
     '@pascal-app/editor',
+    '@pascal-app/plugin-environment',
     '@pascal-app/mcp',
     '@pascal-app/plugin-streetscape',
     '@pascal-app/plugin-trees',

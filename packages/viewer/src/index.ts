@@ -53,6 +53,12 @@ export {
   SSGI_PARAMS,
 } from './components/viewer/post-processing'
 export { SceneEnvironment } from './components/viewer/scene-environment'
+export {
+  SceneAtmosphere,
+  type SceneAtmosphereSource,
+  useSceneAtmosphere,
+} from './components/viewer/scene-atmosphere'
+export { SceneGroundReplacement, useSceneGroundReplacement } from './components/viewer/scene-ground-replacement'
 export { useAssetUrl } from './hooks/use-asset-url'
 export { useGLTFKTX2 } from './hooks/use-gltf-ktx2'
 export { useNodeEvents } from './hooks/use-node-events'
