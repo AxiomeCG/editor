@@ -119,7 +119,6 @@ export { MoveTool } from './components/tools/item/move-tool'
 // `@pascal-app/nodes` (wall curve sagitta snap, door / window placement,
 // item drop) so kinds don't reach into editor internals.
 export {
-  calculateCursorRotation,
   calculateItemRotation,
   getSideFromNormal,
   isValidWallSideFace,
@@ -151,6 +150,7 @@ export {
   resolveLevelConstructionPlane,
 } from './components/tools/shared/horizontal-construction-plane'
 export { PlacementBox } from './components/tools/shared/placement-box'
+export { PlacementDimensionGuides } from './components/tools/shared/placement-dimension-guides'
 // Pointer-decided support surface (deck top vs floor underneath) — the
 // draw tools (wall / fence) ride their grid plane and commit cap on it.
 export {
@@ -241,6 +241,7 @@ export { SegmentedControl } from './components/ui/controls/segmented-control'
 export { SliderControl } from './components/ui/controls/slider-control'
 export { TerrainSculptPanel } from './components/ui/controls/terrain-sculpt-panel'
 export { ToggleControl } from './components/ui/controls/toggle-control'
+export { ToolOptionsPanel } from './components/ui/controls/tool-options-panel'
 export { FloatingLevelSelector } from './components/ui/floating-level-selector'
 export { CATALOG_ITEMS } from './components/ui/item-catalog/catalog-items'
 // Item collections UI — used by the kind-owned ItemPanel in nodes/.
@@ -261,6 +262,10 @@ export {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from './components/ui/primitives/dropdown-menu'
+export {
+  ShortcutToken,
+  shortcutDisplayValue,
+} from './components/ui/primitives/shortcut-token'
 export { useSidebarStore } from './components/ui/primitives/sidebar'
 export { Slider } from './components/ui/primitives/slider'
 export { SceneLoader } from './components/ui/scene-loader'
@@ -362,6 +367,7 @@ export {
   type ElevationGuideSource,
   type ElevationSnapMatch,
   type ElevationSnapTarget,
+  publishResolvedElevationGuide,
   publishStructuralElevationGuide,
   resolveElevationSnapMatch,
   resolveStructuralElevationSnap,
@@ -398,6 +404,10 @@ export type {
   FloorplanAnnotationVisibility,
 } from './lib/floorplan/annotation-visibility'
 export {
+  exportFloorplanPdf,
+  type FloorplanExportScope,
+} from './lib/floorplan/floorplan-export'
+export {
   createFloorplanContextExtensions,
   FLOORPLAN_CONTEXT_EXTENSION_KEY,
   FLOORPLAN_GEOMETRY_METADATA_KEY,
@@ -422,7 +432,10 @@ export {
   type FloorplanMode,
   isFloorplanToolAvailableInMode,
 } from './lib/floorplan/floorplan-mode'
-export { commitFreshPlacementSubtree } from './lib/fresh-planar-placement'
+export {
+  commitFreshPlacementSubtree,
+  createFreshPlacementSubtree,
+} from './lib/fresh-planar-placement'
 export { exportSceneToGlb } from './lib/glb-export'
 export {
   getHistoryCommandState,
@@ -450,6 +463,7 @@ export {
   scopeNodeId,
 } from './lib/interaction/scope'
 export {
+  type ActivePaintMaterial,
   buildResetSurfaceMaterialUpdates,
   buildRoofSurfaceMaterialPatch,
   buildSingleSurfaceMaterialPatch,
@@ -468,6 +482,14 @@ export {
   measurementPolygonLabelAnchor,
   triangulateMeasurementPolygon,
 } from './lib/measurement-label'
+export {
+  type LingoUnitSpec,
+  lingoUnitSpec,
+  type MeasurementHintOptions,
+  measurementHint,
+  type ParseMeasurementOptions,
+  parseMeasurement,
+} from './lib/measurement-parser'
 export {
   buildMeasurementAngleArcPoints,
   cubicMetersToVolumeUnit,
@@ -532,6 +554,13 @@ export {
   type SlabPlanSnapInput,
   type SlabPlanSnapResult,
 } from './lib/slab-plan-snap'
+export {
+  getSnappingModeLabel,
+  resolveSnapFlags,
+  type SnapContext,
+  type SnapFlags,
+  type SnappingMode,
+} from './lib/snapping-mode'
 export { duplicateStairSubtree } from './lib/stair-duplication'
 export {
   getBuildingLevelsForLevel,
@@ -570,6 +599,7 @@ export {
 export { subscribeCameraPose } from './store/camera-pose-store'
 export { default as useAlignmentGuides } from './store/use-alignment-guides'
 export { default as useAudio } from './store/use-audio'
+export { type CameraHintAction, useCameraHintFocus } from './store/use-camera-hint-focus'
 export { type CommandAction, useCommandRegistry } from './store/use-command-registry'
 export {
   DRAWING_TYPE_OPTIONS,
@@ -578,17 +608,24 @@ export {
 export type {
   CaptureMode,
   FloorplanSelectionTool,
+  Mode,
   SnapshotCropMode,
   SnapshotStandardAspect,
   SplitOrientation,
+  StructureTool,
   Tool,
   ToolDefaults,
+  ToolMode,
   ViewMode,
   WorkspaceMode,
 } from './store/use-editor'
 export {
+  armMaterialPaint,
+  armToolMode,
   default as useEditor,
   getActiveContinuationContext,
+  getActiveSnapContext,
+  getActiveSnappingMode,
   getContinuation,
   isAlignmentGuideActive,
   isAngleSnapActive,
@@ -645,7 +682,10 @@ export {
   type PathDraftPoint,
   usePathDraftPreview,
 } from './store/use-path-draft-preview'
-export { default as usePlacementPreview } from './store/use-placement-preview'
+export {
+  default as usePlacementPreview,
+  type PlacementPreviewDimension,
+} from './store/use-placement-preview'
 export {
   activateQuickMeasurementHudSource,
   clearQuickMeasurementHudSource,

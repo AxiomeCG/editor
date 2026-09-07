@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { type AnyNode, type AnyNodeId, type SceneApi, WallNode } from '@pascal-app/core'
+import { cabinetDefinition } from '../definition'
 import { cabinetQuickActions } from '../quick-actions'
 import { addCabinetModuleSide, addCornerRun } from '../run-ops'
 import { CabinetModuleNode, CabinetNode } from '../schema'
@@ -42,6 +43,27 @@ function sceneApiFixture(seed: AnyNode[]): SceneApi {
 }
 
 describe('cabinet quick actions', () => {
+  test('does not expose hinge flipping in the floating actions', () => {
+    const run = CabinetNode.parse({
+      id: 'cabinet_run-quick-actions-no-hinge',
+      parentId: 'level_quick-actions-no-hinge',
+      children: ['cabinet-module_quick-actions-no-hinge'],
+    })
+    const module = CabinetModuleNode.parse({
+      id: 'cabinet-module_quick-actions-no-hinge',
+      parentId: run.id,
+      width: 0.4,
+      stack: [{ id: 'door-quick-actions-no-hinge', type: 'door', doorType: 'single-left' }],
+    })
+    const sceneApi = sceneApiFixture([run as AnyNode, module as AnyNode])
+
+    expect(
+      cabinetQuickActions({ node: module, nodes: sceneApi.nodes() }).some(
+        (action) => action.id === 'cabinet:flip-hinge',
+      ),
+    ).toBe(false)
+  })
+
   test.each([
     'left',
     'right',
@@ -70,9 +92,16 @@ describe('cabinet quick actions', () => {
     expect(action?.disabled).toBeFalsy()
     const selectedId = action?.run({ sceneApi })?.selectedIds?.[0]
     const selected = selectedId ? sceneApi.get<CabinetModuleNode>(selectedId) : null
+    const derivedRun = selected?.parentId
+      ? sceneApi.get<CabinetNode>(selected.parentId as AnyNodeId)
+      : null
+    const sourceRun = sceneApi.get<CabinetNode>(run.id as AnyNodeId)
 
     expect(selected?.name).toBe('Base Cabinet')
     expect(selected?.moduleKind).toBe('standard')
+    expect(derivedRun?.parentId).toBe(run.id)
+    expect(sourceRun?.children).toContain(derivedRun?.id as AnyNodeId)
+    expect(cabinetDefinition.relations?.hosts).toContain('cabinet')
   })
 
   test('offers and runs an L-corner action from run selection using the end module', () => {
@@ -271,7 +300,7 @@ describe('cabinet quick actions', () => {
     expect(sceneApi.get<CabinetModuleNode>(source.id)?.width).toBeCloseTo(0.59)
   })
 
-  test('disables blocked side and corner actions instead of hiding them', () => {
+  test('pushes a flush neighbor for a side insertion while keeping corner actions disabled', () => {
     const levelId = 'level_quick_actions_disabled-blocked-side' as AnyNodeId
     const run = CabinetNode.parse({
       id: 'cabinet_run-quick-actions-disabled-blocked-side',
@@ -319,15 +348,16 @@ describe('cabinet quick actions', () => {
     const rightAction = actions.find((action) => action.id === 'cabinet:add-right')
     const cornerRightAction = actions.find((action) => action.id === 'cabinet:add-corner-right')
 
-    expect(rightAction?.disabled).toBe(true)
+    expect(rightAction?.disabled).toBe(false)
     expect(cornerRightAction?.disabled).toBe(true)
-    expect(rightAction?.run({ sceneApi })).toBeUndefined()
+    expect(rightAction?.run({ sceneApi })).toBeTruthy()
     expect(cornerRightAction?.run({ sceneApi })).toBeUndefined()
     expect(
       Object.values(sceneApi.nodes()).filter(
         (node): node is CabinetModuleNode => node.type === 'cabinet-module',
       ),
-    ).toHaveLength(moduleCountBefore)
+    ).toHaveLength(moduleCountBefore + 1)
+    expect(sceneApi.get<CabinetModuleNode>(rightModule.id)?.position[0]).toBeCloseTo(0.95)
   })
 
   test('disables wall-blocked side add while keeping shrinkable L action enabled', () => {

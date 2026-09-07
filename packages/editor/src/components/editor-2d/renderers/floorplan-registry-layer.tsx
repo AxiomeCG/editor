@@ -27,7 +27,7 @@ import {
   useLiveTransforms,
   useScene,
 } from '@pascal-app/core'
-import { useViewer } from '@pascal-app/viewer'
+import { beginPerfAction, cancelPerfAction, commitPerfAction, useViewer } from '@pascal-app/viewer'
 import {
   type ComponentProps,
   memo,
@@ -47,6 +47,7 @@ import {
   resolveDirectManipulationNode,
   resolveDirectRotationDragDelta,
   resolveDirectRotationPatch,
+  shouldStartDirectMoveDrag,
   snapDirectRotationDelta,
 } from '../../../lib/direct-manipulation'
 import { createEditorApi } from '../../../lib/editor-api'
@@ -247,6 +248,7 @@ export function cancelFloorplanAffordanceDrag(
   for (const id of drag.session.affectedIds) effects.clearPreview(id)
   effects.endReshapeScope(drag)
   effects.clearDragFeedback?.()
+  cancelPerfAction()
   return true
 }
 
@@ -309,6 +311,14 @@ export function floorplanAffordanceReshapeScope(
     return { kind: 'handle-drag', nodeId, handle: ROTATE_HANDLE_DRAG_LABEL }
   }
   return null
+}
+
+function floorplanAffordancePerfAction(node: AnyNode, affordance: string): string {
+  if (affordance.includes('endpoint')) return `drag:${node.type}-endpoint`
+  if (affordance.includes('resize')) return 'drag:resize'
+  if (affordance.includes('rotate')) return 'drag:rotate'
+  if (affordance.includes('move')) return 'drag:move'
+  return 'drag:reshape'
 }
 
 /**
@@ -689,16 +699,24 @@ export const FloorplanRegistryLayer = memo(function FloorplanRegistryLayer() {
 
   const startDirectMoveDrag = useCallback(
     (id: AnyNodeId, event: ReactPointerEvent<SVGGElement>): boolean => {
-      if (event.button !== 0 || !(event.metaKey || event.ctrlKey)) return false
+      if (event.button !== 0) return false
 
       const node = useScene.getState().nodes[id]
       if (!node || !isRegistryMovable(node.type)) return false
-      // Sole selection only: per-node direct manipulation stands down for a
-      // multi-selection (the group session owns plain drags there, and Cmd is
-      // the selection-toggle key — a wobbly Cmd+click must not yank one
-      // member out of the group).
       const currentSelectedIds = useViewer.getState().selection.selectedIds
-      if (currentSelectedIds.length !== 1 || currentSelectedIds[0] !== id) return false
+      const allowPlainDrag = nodeRegistry.get(node.type)?.capabilities?.movable?.directDrag === true
+      const commandModifier = event.metaKey || event.ctrlKey
+      if (
+        !shouldStartDirectMoveDrag({
+          allowPlainDrag,
+          commandModifier,
+          handleOwnsPointer: false,
+          nodeId: id,
+          selectedIds: currentSelectedIds,
+        })
+      ) {
+        return false
+      }
 
       event.preventDefault()
       event.stopPropagation()
@@ -750,9 +768,8 @@ export const FloorplanRegistryLayer = memo(function FloorplanRegistryLayer() {
         if (endEvent.pointerId !== pointerId) return
         cleanup()
         if (!engaged) {
-          // Cmd/Ctrl+click without drag: toggle member (options object, not bare boolean).
           applyEntrySelection(id, {
-            shouldToggle: true,
+            shouldToggle: commandModifier,
             isolateMember: false,
           })
         }
@@ -1175,6 +1192,7 @@ export const FloorplanRegistryLayer = memo(function FloorplanRegistryLayer() {
       event.stopPropagation()
       suppressBoxSelectForPointer(event)
 
+      beginPerfAction(floorplanAffordancePerfAction(node, affordance), `${node.type}:${node.id}`)
       const session = handler.start({
         node,
         payload,
@@ -1337,6 +1355,7 @@ export const FloorplanRegistryLayer = memo(function FloorplanRegistryLayer() {
           drag.historyPaused = false
         }
         drag.session.commit()
+        commitPerfAction()
         sfxEmitter.emit('sfx:structure-build')
         clearSurfacePlanSnapFeedback()
         endReshapeScope(drag)
@@ -1378,6 +1397,7 @@ export const FloorplanRegistryLayer = memo(function FloorplanRegistryLayer() {
           drag.historyPaused = false
         }
         useScene.getState().updateNodes(finalUpdates)
+        commitPerfAction()
         sfxEmitter.emit('sfx:structure-build')
       } else {
         // Either no net change or canCommit() rejected — revert and
@@ -1391,6 +1411,7 @@ export const FloorplanRegistryLayer = memo(function FloorplanRegistryLayer() {
         }
         const overrides = useLiveNodeOverrides.getState()
         for (const id of drag.session.affectedIds) overrides.clear(id)
+        cancelPerfAction()
       }
 
       clearSurfacePlanSnapFeedback()
@@ -2038,12 +2059,12 @@ const FloorplanRegistryEntry = memo(function FloorplanRegistryEntry({
       // the body-drag gesture — the whole selection slides, not one member.
       if (onGroupMovePointerDown(nodeId, event)) return
       sfxEmitter.emit('sfx:item-pick')
-      setMovingNode(currentNode as never)
+      createEditorApi().engageMove(currentNode)
       // Claim 2D ownership of this move at the source. `setMovingNode`
       // resets the origin to null, so this must follow it.
       setMovingNodeOrigin('2d')
     },
-    [nodeId, onGroupMovePointerDown, setMovingNode, setMovingNodeOrigin],
+    [nodeId, onGroupMovePointerDown, setMovingNodeOrigin],
   )
 
   const cacheEntry = buildFloorplanEntryGeometry({

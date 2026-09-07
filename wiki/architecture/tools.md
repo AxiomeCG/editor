@@ -96,6 +96,11 @@ export function MyTool() {
     mode-positioned point, so grid quantise / angle lock / free placement are respected right up to
     the wall and only the last few cm stick. It is **not** a Shift bypass and must not be gated on
     modifiers. See `snapWallDraftPointDetailed` in `components/tools/wall/wall-drafting.ts`.
+  - **Sanctioned exception — lean-to structural connection snap.** Moving or resizing a
+    `lean-to-extension` keeps a tight, mode-independent edge/height catch to a neighboring
+    extension. This is connectivity: the joined roofs become one structural run with shared
+    gutter ends and a single joint post. It runs after the active grid/free proposal and is
+    bypassed only by held Alt. The same rule applies in 2D and 3D.
 - **Constraints and guides can be decoupled.** When a stronger constraint owns the proposal —
   a wall segment's 45° lock while in `angles` mode — the tool may still publish passive dashed
   alignment/proximity guides as long as it does not apply the guide snap delta. Use this for chained
@@ -172,7 +177,7 @@ Anything that subscribes to `useLiveTransforms` to inform 2D rendering needs to 
 
 `useLiveTransforms` (above) carries a rigid position/rotation offset — right when the renderer can preview the move by transforming the node's group. It's **wrong** when the geometry is *recomputed from data fields* (a wall re-miters from its `start`/`end`, an opening re-cuts its host wall, an endpoint drag reshapes the segment and cascades to linked walls): the shape itself changes, so there's no rigid offset to apply. Those preview via **`useLiveNodeOverrides`** (`@pascal-app/core`) — the tool publishes the changed fields per tick (`set(id, patch)` / `setMany(...)`) and the geometry systems merge them (`getEffectiveWall` in 3D, the floor-plan sibling-override merge in 2D, `getEffectiveNode` in panels). The scene store stays untouched during the drag; on commit the tool clears overrides and writes it **once** (`resumeSceneHistory → updateNodes([...]) → pauseSceneHistory`), so the gesture is a single undo step. Esc/unmount just clears overrides — cancel is free.
 
-**Writing `useScene.updateNodes`/`updateNode` per `grid:move` tick is a blocker:** it replaces the `nodes` map ref, so every `useScene(s => s.nodes)` subscriber app-wide (panels, HUD, tooltips, floor plan, catalog) re-renders each frame → FPS collapse. (`markDirty` per tick is fine — it never calls `set()`.) Reference: `packages/nodes/src/wall/{move-tool,move-endpoint-tool}.tsx`.
+**Writing `useScene.updateNodes`/`updateNode` per `grid:move` tick is a blocker:** it replaces the `nodes` map ref, so every `useScene(s => s.nodes)` subscriber app-wide (panels, HUD, tooltips, floor plan, catalog) re-renders each frame → FPS collapse. (`markDirty` per tick is fine for a bounded gesture — it never calls `set()` and the marks drain every frame; an animation loop that marks dirty for as long as it runs is not, see `node-definitions.md` § "`geometry` + `system`".) Reference: `packages/nodes/src/wall/{move-tool,move-endpoint-tool}.tsx`.
 
 ## Floorplan registry: per-node subscriptions, stable props
 

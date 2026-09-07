@@ -61,6 +61,7 @@ export {
 export { SceneGroundReplacement, useSceneGroundReplacement } from './components/viewer/scene-ground-replacement'
 export { useAssetUrl } from './hooks/use-asset-url'
 export { useGLTFKTX2 } from './hooks/use-gltf-ktx2'
+export { useLibraryMaterialsVersion } from './hooks/use-library-materials-version'
 export { useNodeEvents } from './hooks/use-node-events'
 export { ASSETS_CDN_URL, resolveAssetUrl, resolveCdnUrl } from './lib/asset-url'
 export { backdropGradient, deepSkyColor, horizonHazeColor } from './lib/backdrop'
@@ -81,6 +82,7 @@ export {
 } from './lib/csg-utils'
 export { disposeObject3DResources } from './lib/dispose-object3d'
 export type { EdgeMode } from './lib/edge-style'
+export { PERF_OVERLAY_ENABLED } from './lib/gpu-perf'
 export {
   computeHeroFraming,
   DEFAULT_FRAMING_EXCLUDED_TYPES,
@@ -134,6 +136,9 @@ export {
   WHITE_PALETTE,
 } from './lib/materials'
 export { mergedOutline } from './lib/merged-outline-node'
+export * from './lib/perf-actions'
+export { type PerfBatchStats, publishPerfBatchStats } from './lib/perf-panel-store'
+export * from './lib/perf-tracks'
 export {
   detectRendererCapability,
   initializeGpuRenderer,
@@ -149,7 +154,12 @@ export {
   SCENE_THEMES,
   type SceneTheme,
 } from './lib/scene-themes'
-export { type HiddenReason, hideFromScene, showInScene } from './lib/scene-visibility'
+export {
+  type HiddenReason,
+  hideFromScene,
+  showInScene,
+  temporarilyShowShadowOnly,
+} from './lib/scene-visibility'
 export {
   createSnapshotPipeline,
   SNAPSHOT_MAX_EDGE,
@@ -214,7 +224,11 @@ export { InteractiveSystem } from './systems/interactive/interactive-system'
 export { ItemSystem } from './systems/item/item-system'
 export { ItemLightSystem } from './systems/item-light/item-light-system'
 export { LevelSystem } from './systems/level/level-system'
-export { snapLevelsToTruePositions } from './systems/level/level-utils'
+export {
+  EXPLODED_GAP,
+  getLevelPresentationY,
+  snapLevelsToTruePositions,
+} from './systems/level/level-utils'
 export { getRoofMaterialArray } from './systems/roof/roof-materials'
 // Generic roof-segment primitives. Kinds that compose CSG against
 // the roof shell (chimney's self-trim, dormer's virtual-segment cut)

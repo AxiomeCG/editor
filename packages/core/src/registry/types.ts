@@ -337,6 +337,8 @@ export type ToolHint = {
    * so the HUD reflects reality. Omit for always-shown hints.
    */
   minDraftVertices?: number
+  /** Optional live predicate for hints that only apply in one tool sub-mode. */
+  visible?: ToolHintVisibility
   /**
    * Render this hint as a live mode chip — like the snapping / continuation
    * chips — instead of a static key row: the HUD shows the current value's
@@ -345,6 +347,13 @@ export type ToolHint = {
    * fallback when the current value has no entry in `chip.labels`.
    */
   chip?: ToolHintChip
+}
+
+export type ToolHintVisibility = {
+  /** Subscribe to changes that may alter `value`. */
+  subscribe: (onChange: () => void) => () => void
+  /** Whether the helper should render this hint now. */
+  value: () => boolean
 }
 
 export type ToolHintChip = {
@@ -364,6 +373,39 @@ export type ToolHintChip = {
 }
 
 export type FloorplanScope = 'level' | 'building' | 'site'
+// ─── ToolOption ──────────────────────────────────────────────────────
+//
+// A declarative pick-one option row for a kind's build tool, chosen in a
+// sidebar BEFORE drawing (a `ToolHintChip` cycles in the HUD DURING it).
+// Any host that mounts the shared `<ToolOptionsPanel>` shows every kind's
+// declared options without per-kind wiring — the community Build sidebar
+// gets them for free instead of hardcoding each one. The kind owns the
+// state, typically a small ephemeral store beside its tool.
+
+export type ToolOptionChoice = {
+  /** Value token, e.g. 'draw'. */
+  value: string
+  /** Button label. Sentence case. */
+  label: string
+  /** Helper line shown under the row while this choice is active. */
+  description?: string
+}
+
+export type ToolOption = {
+  /** Stable row id within the kind, e.g. 'footprintSource'. */
+  id: string
+  /** Row label. Sentence case, e.g. 'Create from'. */
+  label: string
+  choices: readonly ToolOptionChoice[]
+  /** Subscribe to live value changes (Zustand-store-like); returns unsubscribe. */
+  subscribe: (onChange: () => void) => () => void
+  /** Current value token. */
+  value: () => string
+  /** Select a choice. Pure state write — arming the tool is the host's job. */
+  set: (value: string) => void
+  /** Optional live predicate — e.g. the roof's 'Create from' hides for conical. */
+  visible?: ToolHintVisibility
+}
 
 export type FloorplanGeometry =
   | ({ kind: 'path'; d: string } & FloorplanStyle)
@@ -1336,6 +1378,13 @@ export type NodeDefinition<S extends ZodObject<any>> = {
   toolHints?: ToolHint[]
 
   /**
+   * Pick-one option rows for this kind's build tool, rendered by the shared
+   * `<ToolOptionsPanel>` in whichever sidebar the host mounts it (see
+   * `ToolOption`). E.g. the roof's 'Create from: Draw / Room'.
+   */
+  toolOptions?: readonly ToolOption[]
+
+  /**
    * Which snapping profile this kind uses, so the editor's contextual snapping
    * HUD + snap math + force-place affordance are node-declared rather than
    * switched on the kind name (`'item'` free object vs `'structural'` wall/slab/
@@ -1469,6 +1518,9 @@ export type Presentation = {
   /** Set false when selection is edited directly through in-scene affordances
    * and the generic floating action menu would duplicate or conflict with them. */
   actionMenu?: boolean
+  /** Set false to drop the "Find in catalog" action for this kind — for nodes
+   * that are placed through a plugin panel rather than a browsable catalog. */
+  findInCatalog?: boolean
 }
 
 export type IconRef =
@@ -1946,6 +1998,8 @@ export type CapabilityCtx = { node: AnyNode }
 export type MovableConfig = {
   axes: ReadonlyArray<'x' | 'y' | 'z'>
   gridSnap?: boolean
+  /** Allow an ordinary primary-button body drag to enter the move tool. */
+  directDrag?: boolean
   /**
    * Pin the dragged node to the cursor (absolute placement) instead of the
    * default offset-preserving drag, where the node moves by the cursor's
@@ -1981,11 +2035,34 @@ export type MovableConfig = {
   parentFrame?: MovableParentFrame
   /**
    * Optional group-move snap for the generic multi-selection translate gizmo.
-   * Returns an adjusted candidate position for this node when the moving group
-   * should magnetically settle onto a nearby feature (for example, a cabinet
-   * run snapping flush to a wall while the whole selected kitchen moves as one).
+   * Returns an adjusted candidate position for this node when the moving
+   * group should magnetically settle onto a nearby feature.
    */
   groupMoveSnap?: (args: GroupMoveSnapArgs) => [number, number, number] | null
+  /**
+   * Optional rotation-aware group-move snap. This is additive to the original
+   * `groupMoveSnap` contract so existing v1 plugins remain valid.
+   */
+  groupMoveSnapPose?: (args: GroupMoveSnapArgs) => GroupMoveSnapResult | null
+  /**
+   * Optional kind-owned validity check for the final planar drag pose. This
+   * complements `floorPlaced` collision checks for constraints that depend
+   * on other scene geometry, such as a cabinet crossing a wall opening.
+   */
+  isValidPosition?: (args: {
+    node: AnyNode
+    position: readonly [number, number, number]
+    rotation: number
+    levelId: AnyNodeId | null
+    nodes: Readonly<Record<string, AnyNode>>
+  }) => boolean
+  /**
+   * Kind-owned grid resolver for a planar move. Unlike scalar grid snapping,
+   * this receives the complete candidate pose so a kind can snap a visible
+   * footprint edge (including a local bounds offset and rotation) rather than
+   * blindly rounding its stored origin.
+   */
+  gridSnapPosition?: (args: GridSnapPositionArgs) => [number, number, number]
   override?: (ctx: CapabilityCtx) => MovableConfig | null
 }
 
@@ -2031,6 +2108,24 @@ export type MovableParentFrame = {
     snappedLocal: readonly [number, number, number],
     nodes: Readonly<Record<string, AnyNode>>,
   ) => ParentFrameSnapMatch[]
+  /** Optional kind-owned live patches for derived nodes that follow the move. */
+  previewOverrides?: (args: {
+    node: AnyNode
+    parent: AnyNode
+    position: readonly [number, number, number]
+    sceneApi: SceneApi
+  }) => ReadonlyArray<readonly [AnyNodeId, Partial<AnyNode>]>
+  /**
+   * Optional live collision check for a child moving in the parent frame.
+   * The generic move tool uses this to colour the drag bounds and reject an
+   * invalid drop; the kind owns the actual domain rule.
+   */
+  isValidPosition?: (args: {
+    node: AnyNode
+    parent: AnyNode
+    position: readonly [number, number, number]
+    nodes: Readonly<Record<string, AnyNode>>
+  }) => boolean
   /**
    * Called after a move of the child commits, with the LIVE (post-commit)
    * child and parent. Lets the kind run derived-state maintenance the
@@ -2050,9 +2145,20 @@ export type ParentFrameSnapMatch = {
 export type GroupMoveSnapArgs = {
   node: AnyNode
   candidatePosition: [number, number, number]
+  candidateRotation?: number
   movingIds: readonly AnyNodeId[]
   nodes: Readonly<Record<string, AnyNode>>
   levelId: AnyNodeId | null
+}
+
+export type GroupMoveSnapResult = {
+  position: [number, number, number]
+  rotation?: number
+}
+
+export type GridSnapPositionArgs = Omit<GroupMoveSnapArgs, 'candidateRotation'> & {
+  candidateRotation: number
+  gridStep: number
 }
 
 export type LiveTransformLike = {

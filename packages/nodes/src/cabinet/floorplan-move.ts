@@ -20,7 +20,11 @@ import {
   useEditor,
 } from '@pascal-app/editor'
 import { cabinetModuleParentFrame } from './move-frame'
-import { bumpCabinetRunLayoutRevision, syncCornerRunsFromSourceModule } from './run-ops'
+import {
+  bumpCabinetRunLayoutRevision,
+  previewCornerRunsFromRunSources,
+  syncCornerRunsFromSourceModule,
+} from './run-ops'
 import { resolveCabinetModuleWallSnapLocal } from './wall-snap'
 
 type SceneUpdate = { id: AnyNodeId; data: Partial<AnyNode> }
@@ -53,10 +57,12 @@ function mergeSceneUpdate(
 function collectCabinetModuleMoveCommitUpdates({
   lastLocal,
   moduleId,
+  previousModule,
   runId,
 }: {
   lastLocal: [number, number, number]
   moduleId: AnyNodeId
+  previousModule: CabinetModuleNodeType
   runId: AnyNodeId
 }): SceneUpdate[] | null {
   const baseNodes = useScene.getState().nodes as Record<AnyNodeId, AnyNode>
@@ -112,6 +118,7 @@ function collectCabinetModuleMoveCommitUpdates({
   if (liveModule?.type === 'cabinet-module') {
     syncCornerRunsFromSourceModule({
       module: liveModule,
+      previousModule,
       run: sceneApi.get<CabinetNodeType>(runId) ?? liveRun,
       sceneApi,
     })
@@ -144,10 +151,83 @@ export const cabinetModuleFloorplanMoveTarget: FloorplanMoveTarget<CabinetModule
   ) as CabinetNodeType | null
   const originalLocal = [...node.position] as [number, number, number]
   let lastLocal: [number, number, number] = originalLocal
+  let lastPositionValid = true
+  let forcePlace = false
+  const initialPreviewSceneApi = createSceneApi(useScene)
+  const initialCornerPreview = run
+    ? previewCornerRunsFromRunSources({
+        initialOverrides: [[moduleId, { position: originalLocal }]],
+        previousModules: [node],
+        run,
+        sceneApi: initialPreviewSceneApi,
+      })
+    : []
+  const affectedIds = new Set<AnyNodeId>([moduleId, ...(run ? [run.id as AnyNodeId] : [])])
+  for (const [id] of initialCornerPreview) affectedIds.add(id)
+  let activePreviewIds = new Set<AnyNodeId>()
+
+  const publishPreview = (position: [number, number, number]) => {
+    if (!run) {
+      useLiveNodeOverrides.getState().set(moduleId, { position })
+      return
+    }
+
+    const entries = previewCornerRunsFromRunSources({
+      initialOverrides: [[moduleId, { position }]],
+      previousModules: [node],
+      run,
+      sceneApi: createSceneApi(useScene),
+    })
+    const nextIds = new Set(entries.map(([id]) => id))
+    for (const id of activePreviewIds) {
+      if (!nextIds.has(id)) useLiveNodeOverrides.getState().clear(id)
+    }
+    useLiveNodeOverrides.getState().setMany(entries)
+    activePreviewIds = nextIds
+
+    const scene = useScene.getState()
+    scene.markDirty(run.id as AnyNodeId)
+    for (const [id] of entries) {
+      if (scene.nodes[id]) scene.markDirty(id)
+    }
+  }
 
   const session: FloorplanMoveTargetSession = {
-    affectedIds: run ? [moduleId, run.id as AnyNodeId] : [moduleId],
-    apply({ planPoint }) {
+    affectedIds: [...affectedIds],
+    apply({ planPoint, modifiers }) {
+      forcePlace = modifiers.altKey
+      if ((isGridSnapActive() || isMagneticSnapActive()) && run?.parentId) {
+        const rawLocal = cabinetModuleParentFrame.planToLocal(
+          run,
+          planPoint[0],
+          originalLocal[1],
+          planPoint[1],
+          useScene.getState().nodes,
+        )
+        const wallLocal = resolveCabinetModuleWallSnapLocal({
+          candidateLocal: rawLocal,
+          gridStep: isGridSnapActive() ? useEditor.getState().gridSnapStep : 0,
+          module: node,
+          nodes: useScene.getState().nodes,
+          parentLevelId: run.parentId as AnyNodeId,
+          run,
+        })
+        if (wallLocal) {
+          lastLocal = wallLocal
+          lastPositionValid = cabinetModuleParentFrame.isValidPosition
+            ? cabinetModuleParentFrame.isValidPosition({
+                node: { ...node, position: wallLocal },
+                parent: run,
+                position: wallLocal,
+                nodes: useScene.getState().nodes as Record<string, AnyNode>,
+              })
+            : true
+          useAlignmentGuides.getState().clear()
+          publishPreview(wallLocal)
+          return
+        }
+      }
+
       const snap = (value: number) =>
         isGridSnapActive()
           ? Math.round(value / useEditor.getState().gridSnapStep) *
@@ -160,7 +240,8 @@ export const cabinetModuleFloorplanMoveTarget: FloorplanMoveTarget<CabinetModule
       // same as the generic overlay would have done.
       if (!run) {
         lastLocal = [planX, originalLocal[1], planZ]
-        useLiveNodeOverrides.getState().set(moduleId, { position: lastLocal })
+        lastPositionValid = true
+        publishPreview(lastLocal)
         return
       }
 
@@ -192,26 +273,22 @@ export const cabinetModuleFloorplanMoveTarget: FloorplanMoveTarget<CabinetModule
           }
         }
       }
-      // Wall attachment snap — 2D parity with the 3D move tool's
-      // `groupMoveSnap` pass: active in every snapping mode except Off.
-      if ((isGridSnapActive() || isMagneticSnapActive()) && run.parentId) {
-        const snapped = resolveCabinetModuleWallSnapLocal({
-          candidateLocal: local,
-          module: node,
-          nodes: useScene.getState().nodes,
-          parentLevelId: run.parentId as AnyNodeId,
-          run,
-        })
-        if (snapped) local = snapped
-      }
       lastLocal = local
-      useLiveNodeOverrides.getState().set(moduleId, { position: local })
-      useScene.getState().markDirty(run.id as AnyNodeId)
+      lastPositionValid = cabinetModuleParentFrame.isValidPosition
+        ? cabinetModuleParentFrame.isValidPosition({
+            node: { ...node, position: local },
+            parent: run,
+            position: local,
+            nodes: useScene.getState().nodes as Record<string, AnyNode>,
+          })
+        : true
+      publishPreview(local)
     },
     canCommit() {
       const live = useScene.getState().nodes[moduleId]
       if (live?.type !== 'cabinet-module') return false
-      return lastLocal[0] !== originalLocal[0] || lastLocal[2] !== originalLocal[2]
+      const changed = lastLocal[0] !== originalLocal[0] || lastLocal[2] !== originalLocal[2]
+      return changed && (lastPositionValid || forcePlace)
     },
     commit() {
       const scene = useScene.getState()
@@ -222,7 +299,12 @@ export const cabinetModuleFloorplanMoveTarget: FloorplanMoveTarget<CabinetModule
         return
       }
       const runId = run.id as AnyNodeId
-      const updates = collectCabinetModuleMoveCommitUpdates({ lastLocal, moduleId, runId })
+      const updates = collectCabinetModuleMoveCommitUpdates({
+        lastLocal,
+        moduleId,
+        previousModule: node,
+        runId,
+      })
       if (updates) {
         scene.updateNodes(updates)
         return
@@ -239,6 +321,7 @@ export const cabinetModuleFloorplanMoveTarget: FloorplanMoveTarget<CabinetModule
       if (liveModule?.type === 'cabinet-module') {
         syncCornerRunsFromSourceModule({
           module: liveModule,
+          previousModule: node,
           run: sceneApi.get(runId) ?? liveRun,
           sceneApi,
         })

@@ -2,6 +2,7 @@
   "name": "@pascal-app/editor",
   "version": "1.0.0-beta.5",
   "description": "Pascal building editor component",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./src/index.tsx",
@@ -56,7 +57,7 @@
     "tailwind-merge": "^3.5.0",
     "three-bvh-csg": "^0.0.18",
     "three-mesh-bvh": "~0.9.8",
-    "zod": "^4.3.6",
+    "zod": ">=4.5.4 <4.6",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
