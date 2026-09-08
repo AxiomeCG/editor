@@ -10,9 +10,14 @@ import {
 import { registerEditorHostPanel } from '@pascal-app/editor'
 import { builtinPlugin } from '@pascal-app/nodes'
 import { bonesHostPanel, bonesPlugin } from '@pascal-app/plugin-bones'
-import { environmentHostPanel, environmentPlugin } from '@pascal-app/plugin-environment'
+import {
+  environmentHostPanel,
+  environmentPlugin,
+  environmentPresentation,
+} from '@pascal-app/plugin-environment'
 import { streetscapeHostPanel, streetscapePlugin } from '@pascal-app/plugin-streetscape'
 import { treesHostPanel, treesPlugin } from '@pascal-app/plugin-trees'
+import { registerViewerPresentation } from '@pascal-app/viewer'
 
 // Idempotency guards: HMR can reload this module, but `registerNode`
 // throws on duplicate kinds. Flags live in the module closure so they
@@ -91,6 +96,7 @@ extendPluginDiscovery(async () => [treesPlugin])
 registerEditorHostPanel(treesHostPanel)
 extendPluginDiscovery(async () => [environmentPlugin])
 registerEditorHostPanel(environmentHostPanel)
+registerViewerPresentation(environmentPresentation)
 extendPluginDiscovery(async () => [bonesPlugin])
 // Opt-in: Bones ships uninstalled — users enable it per scene from the
 // Plugins panel (engineering X-ray is a specialist view, not a default).

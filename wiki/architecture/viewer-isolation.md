@@ -77,6 +77,52 @@ When an editor feature needs to live "inside" the canvas but must not pollute th
 
 This pattern lets the viewer stay ignorant of these components while they still have access to the R3F context.
 
+## Plugin presentation contributions
+
+Presentation-only plugin content uses the viewer-owned registry rather than a
+route-specific scene slot. The core `Plugin` manifest stays rendering-agnostic:
+the host registers a separate contribution during bootstrap and mounts the
+registry once inside each viewer that should show presentation.
+
+```tsx
+import {
+  registerViewerPresentation,
+  Viewer,
+  ViewerPresentations,
+  type ViewerPresentationContribution,
+} from '@pascal-app/viewer'
+
+const presentation: ViewerPresentationContribution = {
+  id: 'acme:landscape:presentation',
+  pluginId: 'acme:landscape',
+  component: () => import('./presentation'),
+}
+
+registerViewerPresentation(presentation)
+
+<Viewer>
+  <ViewerPresentations />
+</Viewer>
+```
+
+`ViewerPresentations` filters `pluginId` through the current project's
+`installedPlugins`. Uninstalling a plugin therefore unmounts its contribution;
+reinstalling remounts it without hot-removing the session's code or node
+definitions. Every lazy contribution has its own Suspense and error boundary,
+so a failed plugin does not take down the authored scene or its siblings.
+
+The mount is a sibling of `scene-renderer`, never one of its descendants. It
+must not create semantic nodes, selection targets, history entries, or query
+results, and model export remains rooted at `scene-renderer`. Raw `<Viewer>`
+embedders opt into registered presentation by mounting
+`<ViewerPresentations />`; this also makes snapshot inclusion an explicit host
+policy. The reusable `<Editor>` already mounts it in its normal and preview
+viewer compositions.
+
+Registration does not persist plugin configuration. A plugin that exposes
+versioned configuration export/import still needs its host to store that value
+in a project sidecar and restore it before or after the viewer mounts.
+
 ## Checklist Before Adding Code to `packages/viewer`
 
 - [ ] Does this feature make sense in the read-only viewer route?

@@ -1,8 +1,6 @@
 'use client'
 
 import { Editor, ItemsPanel } from '@pascal-app/editor'
-import { AtmosphereLayer, SurroundingsLayer } from '@pascal-app/plugin-environment'
-import { SceneAtmosphere, SceneGroundReplacement } from '@pascal-app/viewer'
 import { Hammer, Layers, Package, Settings } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -11,6 +9,8 @@ import {
   CommunityViewerToolbarLeft,
   CommunityViewerToolbarRight,
 } from '@/components/viewer-toolbar'
+
+import { generateFloorplan } from '@/lib/floorplan-import-client'
 
 // The open-source editor only ships the built-in catalog (no uploaded items),
 // so the Library/Community/Mine source chips and tag filters add nothing —
@@ -87,6 +87,7 @@ const SIDEBAR_TABS = [
 ]
 
 const PROJECT_ID = 'local-editor'
+const SITE_PANEL_PROPS = { generateFloorplan }
 
 export default function Home() {
   return (
@@ -110,12 +111,7 @@ export default function Home() {
         layoutVersion="v2"
         projectId={PROJECT_ID}
         sidebarTabs={SIDEBAR_TABS}
-        viewerSceneSlot={
-          <>
-            <AtmosphereLayer atmosphereComponent={SceneAtmosphere} />
-            <SurroundingsLayer groundReplacementComponent={SceneGroundReplacement} />
-          </>
-        }
+        sitePanelProps={SITE_PANEL_PROPS}
         viewerToolbarLeft={<CommunityViewerToolbarLeft />}
         viewerToolbarRight={<CommunityViewerToolbarRight />}
       />

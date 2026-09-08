@@ -12,12 +12,16 @@ import {
   type ZoneNode,
 } from '@pascal-app/core'
 import { markPerfAction, useViewer } from '@pascal-app/viewer'
+import type { FloorplanGenerator } from './../../../../../lib/floorplan-import/schema'
+import type { FloorplanTarget } from './../../../../../lib/floorplan-import/native'
+import { captureFloorplanTarget } from './../../../../../lib/floorplan-import/native'
 import {
   Camera,
   ChevronDown,
   ChevronRight,
   Copy,
   Eye,
+  FileImage,
   EyeOff,
   Loader2,
   MoreHorizontal,
@@ -56,6 +60,7 @@ import { cn } from './../../../../../lib/utils'
 import useEditor from './../../../../../store/use-editor'
 import { useUploadStore } from '../../../../../store/use-upload'
 import { MetricControl } from '../../../controls/metric-control'
+import { FloorplanImportDialog } from '../../../floorplan-import-dialog'
 import { LevelDuplicateDialog } from '../../../level-duplicate-dialog'
 import { InlineRenameInput } from './inline-rename-input'
 import { focusTreeNode, TreeNode } from './tree-node'
@@ -684,6 +689,7 @@ const LevelItem = memo(function LevelItem({
   projectId,
   onUploadAsset,
   onDeleteAsset,
+  generateFloorplan,
 }: {
   level: LevelNode
   levels: LevelNode[]
@@ -694,13 +700,19 @@ const LevelItem = memo(function LevelItem({
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
+  generateFloorplan?: FloorplanGenerator
 }) {
   const [cameraPopoverOpen, setCameraPopoverOpen] = useState(false)
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+  const [levelMenuOpen, setLevelMenuOpen] = useState(false)
+  const [floorplanDialogOpen, setFloorplanDialogOpen] = useState(false)
+  const [floorplanTarget, setFloorplanTarget] = useState<FloorplanTarget | null>(null)
+  const [floorplanTargetError, setFloorplanTargetError] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const createNodes = useScene((s) => s.createNodes)
   const updateNodes = useScene((s) => s.updateNodes)
   const itemRef = useRef<HTMLDivElement>(null)
+  const levelMenuTriggerRef = useRef<HTMLButtonElement>(null)
   const isSelected = selectedLevelId === level.id
   const canDeleteLevel = level.level !== 0
   const [isExpanded, setIsExpanded] = useState(isSelected)
@@ -751,6 +763,25 @@ const LevelItem = memo(function LevelItem({
     createNodes(createOps)
     selectLevel(newLevelId as LevelNode['id'], false)
     setDuplicateDialogOpen(false)
+  }
+
+  const handleOpenFloorplanImport = () => {
+    try {
+      setFloorplanTarget(captureFloorplanTarget(level.id))
+      setFloorplanTargetError(null)
+    } catch (error) {
+      setFloorplanTarget(null)
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'This floor cannot be imported. Create an empty floor and try again.'
+      setFloorplanTargetError(
+        message.startsWith('Create an empty level')
+          ? 'Create an empty floor to import this plan. Existing source guides are allowed.'
+          : message,
+      )
+    }
+    setLevelMenuOpen(false)
+    setFloorplanDialogOpen(true)
   }
 
   return (
@@ -889,44 +920,63 @@ const LevelItem = memo(function LevelItem({
             </div>
           </PopoverContent>
         </Popover>
-        <Popover>
+        <Popover onOpenChange={setLevelMenuOpen} open={levelMenuOpen}>
           <PopoverTrigger asChild>
             <button
+              aria-label={`Open actions for ${level.name || getDefaultLevelName(level.level)}`}
               className={cn(
-                'mr-1 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-0 transition-colors group-hover/level:opacity-100',
+                'mr-1 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-0 outline-none transition-colors group-hover/level:opacity-100 group-focus-within/level:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring',
                 selectedLevelId === level.id
                   ? 'hover:bg-black/5 dark:hover:bg-white/10'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground',
               )}
               onClick={(e) => e.stopPropagation()}
+              ref={levelMenuTriggerRef}
+              type="button"
             >
-              <MoreHorizontal className="h-3.5 w-3.5" />
+              <MoreHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-48 p-1" side="right">
+          <PopoverContent
+            align="start"
+            className="w-48 p-1"
+            onClick={(event) => event.stopPropagation()}
+            side="right"
+          >
             <button
-              className="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+              className="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={handleOpenFloorplanImport}
+              type="button"
+            >
+              <FileImage aria-hidden="true" className="h-3.5 w-3.5" />
+              Import from floorplan…
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => handleDuplicateLevel()}
               title="Duplicate level"
+              type="button"
             >
-              <Copy className="h-3.5 w-3.5" />
+              <Copy aria-hidden="true" className="h-3.5 w-3.5" />
               Duplicate
             </button>
             <button
-              className="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+              className="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => setDuplicateDialogOpen(true)}
               title="Duplicate level with options"
+              type="button"
             >
-              <Copy className="h-3.5 w-3.5" />
+              <Copy aria-hidden="true" className="h-3.5 w-3.5" />
               Duplicate with options...
             </button>
             <button
-              className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors enabled:cursor-pointer enabled:hover:bg-accent enabled:hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring enabled:cursor-pointer enabled:hover:bg-accent enabled:hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canDeleteLevel}
               onClick={() => deleteLevelWithFallbackSelection(level.id)}
               title={canDeleteLevel ? 'Delete level' : 'The ground level cannot be deleted'}
+              type="button"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
               Delete
             </button>
           </PopoverContent>
@@ -968,6 +1018,19 @@ const LevelItem = memo(function LevelItem({
         onOpenChange={setDuplicateDialogOpen}
         open={duplicateDialogOpen}
       />
+      <FloorplanImportDialog
+        generateFloorplan={generateFloorplan}
+        level={level}
+        onApplied={() => {
+          selectLevel(level.id)
+          setIsExpanded(true)
+        }}
+        onOpenChange={setFloorplanDialogOpen}
+        open={floorplanDialogOpen}
+        restoreFocusRef={levelMenuTriggerRef}
+        target={floorplanTarget}
+        targetError={floorplanTargetError}
+      />
     </div>
   )
 })
@@ -976,10 +1039,12 @@ const LevelsSection = memo(function LevelsSection({
   projectId,
   onUploadAsset,
   onDeleteAsset,
+  generateFloorplan,
 }: {
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
+  generateFloorplan?: FloorplanGenerator
 } = {}) {
   const createNode = useScene((state) => state.createNode)
   const updateNode = useScene((state) => state.updateNode)
@@ -1043,6 +1108,7 @@ const LevelsSection = memo(function LevelsSection({
         )}
         {[...levels].reverse().map((level, index) => (
           <LevelItem
+            generateFloorplan={generateFloorplan}
             isLast={index === levels.length - 1}
             key={level.id}
             level={level}
@@ -1466,6 +1532,7 @@ const BuildingItem = memo(function BuildingItem({
   projectId,
   onUploadAsset,
   onDeleteAsset,
+  generateFloorplan,
 }: {
   building: BuildingNode
   isBuildingActive: boolean
@@ -1474,6 +1541,7 @@ const BuildingItem = memo(function BuildingItem({
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
+  generateFloorplan?: FloorplanGenerator
 }) {
   const setSelection = useViewer((state) => state.setSelection)
   const phase = useEditor((state) => state.phase)
@@ -1607,6 +1675,7 @@ const BuildingItem = memo(function BuildingItem({
             <div className="flex min-h-0 w-full flex-1 flex-col">
               <div className="flex shrink-0 flex-col">
                 <LevelsSection
+                  generateFloorplan={generateFloorplan}
                   onDeleteAsset={onDeleteAsset}
                   onUploadAsset={onUploadAsset}
                   projectId={projectId}
@@ -1629,9 +1698,15 @@ export interface SitePanelProps {
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
+  generateFloorplan?: FloorplanGenerator
 }
 
-export function SitePanel({ projectId, onUploadAsset, onDeleteAsset }: SitePanelProps = {}) {
+export function SitePanel({
+  projectId,
+  onUploadAsset,
+  onDeleteAsset,
+  generateFloorplan,
+}: SitePanelProps = {}) {
   const rootNodeIds = useScene((state) => state.rootNodeIds)
   const updateNode = useScene((state) => state.updateNode)
   const selectedBuildingId = useViewer((state) => state.selection.buildingId)
@@ -1727,6 +1802,7 @@ export function SitePanel({ projectId, onUploadAsset, onDeleteAsset }: SitePanel
 
                 return (
                   <BuildingItem
+                    generateFloorplan={generateFloorplan}
                     building={building}
                     buildingCameraOpen={buildingCameraOpen}
                     isBuildingActive={isBuildingActive}

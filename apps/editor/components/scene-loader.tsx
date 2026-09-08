@@ -9,14 +9,13 @@ import {
   type SceneGraph,
   type SidebarTab,
 } from '@pascal-app/editor'
-import { AtmosphereLayer, SurroundingsLayer } from '@pascal-app/plugin-environment'
-import { SceneAtmosphere, SceneGroundReplacement } from '@pascal-app/viewer'
 import { Hammer, Layers, Settings } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { countGraphNodes, isEmptyGraphOverwrite } from '@/lib/empty-graph-guard'
+import { generateFloorplan } from '@/lib/floorplan-import-client'
 import { type PersistedSceneGraph, sceneGraphSignature } from '@/lib/scene-signature'
 import { cn } from '@/lib/utils'
 import { BuildTab } from './build-tab'
@@ -302,13 +301,8 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
         onSave={handleSave}
         onThumbnailCapture={handleThumb}
         projectId={meta.projectId ?? 'default'}
+        sitePanelProps={{ generateFloorplan }}
         sidebarTabs={SIDEBAR_TABS}
-        viewerSceneSlot={
-          <>
-            <AtmosphereLayer atmosphereComponent={SceneAtmosphere} />
-            <SurroundingsLayer groundReplacementComponent={SceneGroundReplacement} />
-          </>
-        }
         viewerToolbarLeft={<CommunityViewerToolbarLeft />}
         viewerToolbarRight={<CommunityViewerToolbarRight />}
       />

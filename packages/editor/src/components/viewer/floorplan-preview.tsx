@@ -88,6 +88,17 @@ export type FloorplanPreviewScene = {
   installedPlugins?: readonly string[]
 }
 
+export type FloorplanRenderFailure = {
+  nodeId: string
+  nodeType: string
+  message: string
+}
+
+export type FloorplanRenderStatus = {
+  renderedNodeIds: string[]
+  failures: FloorplanRenderFailure[]
+}
+
 export type FloorplanPreviewProps = {
   className?: string
   compassHost?: Element | null
@@ -95,6 +106,7 @@ export type FloorplanPreviewProps = {
   navigationVisible?: boolean
   onLevelChange?: (levelId: string) => void
   scene?: FloorplanPreviewScene | null
+  onRenderStatus?: (status: FloorplanRenderStatus) => void
   showCompass?: boolean
   showLevelSelector?: boolean
   synchronizeNavigation?: boolean
@@ -211,7 +223,7 @@ function buildFloorplanGeometries(
   level: AnyNode,
   unit: 'metric' | 'imperial',
   metricNotation: 'meters' | 'millimeters',
-): FloorplanRenderEntry[] {
+): { entries: FloorplanRenderEntry[]; failures: FloorplanRenderFailure[] } {
   const building = level.parentId ? nodes[level.parentId] : undefined
   const levelTree = collectLevelTree(level, nodes)
   const entries: FloorplanSourceEntry[] = levelTree.map((node) => ({ node }))
@@ -274,6 +286,7 @@ function buildFloorplanGeometries(
   }
 
   const geometries: FloorplanRenderEntry[] = []
+  const failures: FloorplanRenderFailure[] = []
   for (const { node, contextOverrides } of renderable) {
     const definition = nodeRegistry.get(node.type)
     if (!definition?.floorplan) continue
@@ -302,12 +315,26 @@ function buildFloorplanGeometries(
           geometry,
           includeInInitialFit: definition.category !== 'furnish',
         })
+      } else {
+        failures.push({
+          nodeId: node.id,
+          nodeType: node.type,
+          message: 'The native floorplan builder returned no geometry.',
+        })
       }
     } catch (error) {
       console.error(`[floorplan-preview] Failed to render ${node.type}:${node.id}`, error)
+      failures.push({
+        nodeId: node.id,
+        nodeType: node.type,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The native floorplan builder threw an unknown error.',
+      })
     }
   }
-  return geometries
+  return { entries: geometries, failures }
 }
 
 export function FloorplanPreview({
@@ -317,6 +344,7 @@ export function FloorplanPreview({
   navigationVisible = true,
   onLevelChange,
   scene,
+  onRenderStatus,
   showCompass = true,
   showLevelSelector = true,
   synchronizeNavigation = false,
@@ -360,13 +388,20 @@ export function FloorplanPreview({
   )
   const buildingRotationY = activeBuilding?.type === 'building' ? activeBuilding.rotation[1] : 0
   const buildingRotationDeg = (buildingRotationY * 180) / Math.PI
-  const renderEntries = useMemo(
+  const renderResult = useMemo(
     () =>
       activeLevel
         ? buildFloorplanGeometries(nodes, installedPlugins, activeLevel, unit, metricNotation)
-        : [],
+        : { entries: [], failures: [] },
     [activeLevel, installedPlugins, metricNotation, nodes, unit],
   )
+  const renderEntries = renderResult.entries
+  useEffect(() => {
+    onRenderStatus?.({
+      renderedNodeIds: renderEntries.map((entry) => entry.id),
+      failures: renderResult.failures,
+    })
+  }, [onRenderStatus, renderEntries, renderResult.failures])
   const framingEntries = useMemo(() => {
     const structural = renderEntries.filter((entry) => entry.includeInInitialFit)
     return structural.length > 0 ? structural : renderEntries
