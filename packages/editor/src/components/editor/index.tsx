@@ -71,6 +71,7 @@ import { SettingsPanel, type SettingsPanelProps } from '../ui/sidebar/panels/set
 import { SitePanel, type SitePanelProps } from '../ui/sidebar/panels/site-panel'
 import type { SidebarTab } from '../ui/sidebar/tab-bar'
 import { useHostPanels } from '../ui/sidebar/use-plugin-panels'
+import { FloorplanImportPreview3D } from '../viewer/floorplan-import-preview'
 import { ViewerStage } from '../viewer/viewer-stage'
 import type { ViewerStageMode } from '../viewer/viewer-stage-modes'
 import { CaptureCameraRig } from './capture-camera-rig'
@@ -812,6 +813,7 @@ const ViewerSceneContent = memo(function ViewerSceneContent({
       <StairEditSystem />
       {!(isLoading || isFirstPersonMode) && <SnapAwareGrid />}
       {!(isLoading || noEditing) && <ToolManager />}
+      {!noEditing && <FloorplanImportPreview3D />}
       {isFirstPersonMode && <FirstPersonControls />}
       {isCaptureMode && <CaptureCameraRig />}
       <CustomCameraControls paused={renderPaused} />
@@ -1563,7 +1565,9 @@ function EditorContent({
               navbarSlot={navbarSlot}
               overlays={
                 <>
-                  {!(isCaptureMode || stageOverlay) && <FloatingLevelSelector />}
+                  {!(isCaptureMode || stageOverlay) && (
+                    <FloatingLevelSelector floorplanImport={sitePanelProps?.floorplanImport} />
+                  )}
                   {!(isVersionPreviewMode || isCaptureMode || isStudioMode) && (
                     <div className="pointer-events-auto">
                       <ActionMenu />
