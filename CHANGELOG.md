@@ -10,6 +10,9 @@
 
 ### Fixes
 
+- Keep export settings scrollable and group advanced model options in a keyboard-accessible disclosure.
+- Preserve child geometry when exporting empty mesh containers to USDZ.
+- Pin Environment to its published GitHub commit instead of a vendored archive.
 - Move the Environment zoo/museum/gym testbed into the Environment repository; remove its routes and homepage link from the main editor app.
 - Export the viewer's shadow-only layer for plugin consumers.
 - Remove the nonworking god-ray post-process and its dedicated viewer API; preserve sky, fog, lighting, and ordinary shadows.
