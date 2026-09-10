@@ -12,7 +12,7 @@ import {
   type ZoneNode,
 } from '@pascal-app/core'
 import { markPerfAction, useViewer } from '@pascal-app/viewer'
-import type { FloorplanGenerator } from './../../../../../lib/floorplan-import/schema'
+import type { FloorplanImportProvider } from './../../../../../lib/floorplan-import/curated'
 import type { FloorplanTarget } from './../../../../../lib/floorplan-import/native'
 import { captureFloorplanTarget } from './../../../../../lib/floorplan-import/native'
 import {
@@ -689,7 +689,7 @@ const LevelItem = memo(function LevelItem({
   projectId,
   onUploadAsset,
   onDeleteAsset,
-  generateFloorplan,
+  floorplanImport,
 }: {
   level: LevelNode
   levels: LevelNode[]
@@ -700,7 +700,7 @@ const LevelItem = memo(function LevelItem({
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
-  generateFloorplan?: FloorplanGenerator
+  floorplanImport?: FloorplanImportProvider
 }) {
   const [cameraPopoverOpen, setCameraPopoverOpen] = useState(false)
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
@@ -1019,7 +1019,7 @@ const LevelItem = memo(function LevelItem({
         open={duplicateDialogOpen}
       />
       <FloorplanImportDialog
-        generateFloorplan={generateFloorplan}
+        floorplanImport={floorplanImport}
         level={level}
         onApplied={() => {
           selectLevel(level.id)
@@ -1039,12 +1039,12 @@ const LevelsSection = memo(function LevelsSection({
   projectId,
   onUploadAsset,
   onDeleteAsset,
-  generateFloorplan,
+  floorplanImport,
 }: {
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
-  generateFloorplan?: FloorplanGenerator
+  floorplanImport?: FloorplanImportProvider
 } = {}) {
   const createNode = useScene((state) => state.createNode)
   const updateNode = useScene((state) => state.updateNode)
@@ -1108,7 +1108,7 @@ const LevelsSection = memo(function LevelsSection({
         )}
         {[...levels].reverse().map((level, index) => (
           <LevelItem
-            generateFloorplan={generateFloorplan}
+            floorplanImport={floorplanImport}
             isLast={index === levels.length - 1}
             key={level.id}
             level={level}
@@ -1532,7 +1532,7 @@ const BuildingItem = memo(function BuildingItem({
   projectId,
   onUploadAsset,
   onDeleteAsset,
-  generateFloorplan,
+  floorplanImport,
 }: {
   building: BuildingNode
   isBuildingActive: boolean
@@ -1541,7 +1541,7 @@ const BuildingItem = memo(function BuildingItem({
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
-  generateFloorplan?: FloorplanGenerator
+  floorplanImport?: FloorplanImportProvider
 }) {
   const setSelection = useViewer((state) => state.setSelection)
   const phase = useEditor((state) => state.phase)
@@ -1675,7 +1675,7 @@ const BuildingItem = memo(function BuildingItem({
             <div className="flex min-h-0 w-full flex-1 flex-col">
               <div className="flex shrink-0 flex-col">
                 <LevelsSection
-                  generateFloorplan={generateFloorplan}
+                  floorplanImport={floorplanImport}
                   onDeleteAsset={onDeleteAsset}
                   onUploadAsset={onUploadAsset}
                   projectId={projectId}
@@ -1698,14 +1698,14 @@ export interface SitePanelProps {
   projectId?: string
   onUploadAsset?: (projectId: string, levelId: string, file: File, type: 'scan' | 'guide') => void
   onDeleteAsset?: (projectId: string, url: string) => void
-  generateFloorplan?: FloorplanGenerator
+  floorplanImport?: FloorplanImportProvider
 }
 
 export function SitePanel({
   projectId,
   onUploadAsset,
   onDeleteAsset,
-  generateFloorplan,
+  floorplanImport,
 }: SitePanelProps = {}) {
   const rootNodeIds = useScene((state) => state.rootNodeIds)
   const updateNode = useScene((state) => state.updateNode)
@@ -1802,7 +1802,7 @@ export function SitePanel({
 
                 return (
                   <BuildingItem
-                    generateFloorplan={generateFloorplan}
+                    floorplanImport={floorplanImport}
                     building={building}
                     buildingCameraOpen={buildingCameraOpen}
                     isBuildingActive={isBuildingActive}

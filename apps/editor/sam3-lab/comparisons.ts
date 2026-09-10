@@ -174,7 +174,7 @@ function qualityOptions(variants: ComparisonVariant[]): QualityOption[] {
       label: 'Source-verified quality',
       stages: 'Extraction → Astra review → source-pixel aperture repair and targeted verification',
       tradeoff:
-        'Proposed higher-quality workflow, not a deployed tier. Astra identified material errors better in the inspected cases. Missing-aperture repair is still required; extra review cost must be measured on the production route.',
+        'Astra identified material errors better on this drawing. The local reconstructor now fits source-backed apertures and repairs mixed contours approximately; production review cost and generalization remain unmeasured.',
       usage: unknownReviewUsage(),
     },
   ]
@@ -227,8 +227,8 @@ export async function loadComparisonManifest(
   const variants: ComparisonVariant[] = []
   const caveats = [
     'One frozen drawing, not a labeled accuracy benchmark. Candidate counts are not physical opening counts.',
-    'Only labels and rejections changed. Missing-feature boxes are not replacement masks and are not inserted into native previews.',
-    'Native preview is structure-only, read-only and assumption-based. No scene Apply, inferred floor slab, or inferred room zone occurs.',
+    'Saved review overlays change labels and rejections only. The native reconstructor separately fits source-supported geometry; missing-feature boxes are search regions, never replacement masks.',
+    'This workbench is read-only and assumption-based. Native previews include approximate OCR-named zones and prop blocks; no scene Apply occurs here. The editor has a separate, explicit-confirmation Replicate + Astra sample import.',
     'Astra/Sol used a tool-assisted subagent protocol; Gemini used a single API call. Their durations and token costs are not interchangeable.',
   ]
   for (const extractor of ['yytsi', 'replicate'] as const) {

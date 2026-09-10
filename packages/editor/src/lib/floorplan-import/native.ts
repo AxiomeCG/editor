@@ -23,7 +23,15 @@ import {
   WindowNode,
   ZoneNode,
 } from '@pascal-app/core'
+import { cloneLevelSubtree } from '@pascal-app/core/clone-scene-graph'
 import { CATALOG_ITEMS, type CatalogItem } from '../../components/ui/item-catalog/catalog-items'
+import {
+  type FloorplanPlacement,
+  type FloorplanReconstruction,
+  parseReconstructionNodes,
+  placeFloorplanNode,
+  placeFloorplanPoint,
+} from './curated'
 import {
   type FloorplanCatalogEntry,
   type FloorplanDraft,
@@ -1552,6 +1560,14 @@ export async function applyFloorplanImport({
   }
 
   const guide = buildGuide(draft, target, sourceFile, assetUrl, prepared)
+  return commitNativeImport(prepared, target, guide)
+}
+
+function commitNativeImport(
+  prepared: PreparedImport,
+  target: FloorplanTarget,
+  guide: GuideNode,
+): FloorplanImportResult {
   const guideOp: NodeCreateOp = { node: guide, parentId: target.levelId as AnyNodeId }
   const createOps = [...prepared.createOps, guideOp]
   const allIds = createOps.map((entry) => entry.node.id as AnyNodeId)
@@ -1593,4 +1609,129 @@ export async function applyFloorplanImport({
     guideId: guide.id,
     counts: prepared.counts,
   }
+}
+
+export function prepareFloorplanReconstruction(
+  reconstruction: FloorplanReconstruction,
+  target: FloorplanTarget,
+  placement: FloorplanPlacement,
+): FloorplanPreparedPreview {
+  const blocker = targetStateIssues(target).find((entry) => entry.severity === 'blocking')
+  if (blocker) throw new Error(blocker.message)
+  if (
+    ![placement.x, placement.z, placement.rotation].every(Number.isFinite) ||
+    Math.abs(placement.x) > 10_000 ||
+    Math.abs(placement.z) > 10_000
+  )
+    throw new Error('Floorplan placement must have finite, bounded coordinates.')
+  if (reconstruction.wallHeight > target.levelHeight + GEOMETRY_EPSILON)
+    throw new Error('The reconstruction is taller than the selected floor.')
+  const sourceNodes = parseReconstructionNodes(reconstruction.nodes)
+  const { clonedNodes, newLevelId, idMap } = cloneLevelSubtree(
+    sourceNodes as Record<AnyNodeId, AnyNode>,
+    reconstruction.levelId as AnyNodeId,
+  )
+  const pivot: PlanPoint = [
+    (reconstruction.source.width * reconstruction.source.metersPerPixel) / 2,
+    (reconstruction.source.height * reconstruction.source.metersPerPixel) / 2,
+  ]
+  const nodes: Record<string, AnyNode> = {}
+  const topLevelIds: string[] = []
+  for (const sourceNode of clonedNodes) {
+    if (sourceNode.id === newLevelId) continue
+    const direct = sourceNode.parentId === newLevelId
+    const node = direct ? placeFloorplanNode(sourceNode, placement, pivot) : sourceNode
+    if (direct) {
+      node.parentId = target.levelId as AnyNodeId
+      topLevelIds.push(node.id)
+    }
+    if (node.type === 'zone')
+      node.boundaryWallIds = node.boundaryWallIds.map((id) => (idMap.get(id) ?? id) as typeof id)
+    for (const key of ['nativeMaskPreview', 'floorplanReconstruction']) {
+      const metadata = node.metadata[key]
+      if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) continue
+      const data = metadata as Record<string, unknown>
+      for (const field of ['zoneId', 'sourceZoneId'])
+        if (typeof data[field] === 'string') data[field] = idMap.get(data[field]) ?? data[field]
+    }
+    node.metadata.floorplanImport = {
+      sourceId: reconstruction.source.id,
+      sourceSha256: reconstruction.source.sha256,
+      placement: { ...placement },
+      metersPerPixel: reconstruction.source.metersPerPixel,
+      mode: 'prewarmed-replicate-astra',
+    }
+    nodes[node.id] = node
+  }
+  return {
+    nodes,
+    topLevelIds,
+    sourceToNative: Object.fromEntries(
+      [...idMap].filter(([id]) => id !== reconstruction.levelId).map(([id, next]) => [id, [next]]),
+    ),
+    counts: { ...reconstruction.counts },
+  }
+}
+
+export async function applyFloorplanReconstruction(input: {
+  reconstruction: FloorplanReconstruction
+  target: FloorplanTarget
+  placement: FloorplanPlacement
+  opacity: number
+  signal: AbortSignal
+}): Promise<FloorplanImportResult> {
+  const { reconstruction, target, placement, opacity, signal } = input
+  signal.throwIfAborted()
+  const preview = prepareFloorplanReconstruction(reconstruction, target, placement)
+  const response = await fetch(reconstruction.source.imageUrl, { signal })
+  if (!response.ok) throw new Error('The source image could not be retained with the import.')
+  const blob = await response.blob()
+  if (!blob.type.startsWith('image/') || !blob.size)
+    throw new Error('The source reference must be a raster image.')
+  signal.throwIfAborted()
+  const assetUrl = await saveAsset(
+    new File([blob], `${reconstruction.source.name}.png`, { type: blob.type }),
+  )
+  signal.throwIfAborted()
+  const blocker = targetStateIssues(target).find((entry) => entry.severity === 'blocking')
+  if (blocker) throw new Error(blocker.message)
+  const width = reconstruction.source.width * reconstruction.source.metersPerPixel
+  const depth = reconstruction.source.height * reconstruction.source.metersPerPixel
+  const pivot: PlanPoint = [width / 2, depth / 2]
+  const guide = GuideNode.parse({
+    name: `${reconstruction.source.name} source`,
+    url: assetUrl,
+    position: [placement.x, 0.015, placement.z],
+    rotation: [0, placement.rotation, 0],
+    scale: width / GUIDE_BASE_WIDTH_METERS,
+    opacity: Math.max(0, Math.min(100, opacity)),
+    scaleReference: {
+      start: placeFloorplanPoint([0, 0], placement, pivot),
+      end: placeFloorplanPoint([width, 0], placement, pivot),
+      realLengthMeters: width,
+      measuredLengthUnits: width,
+      metersPerUnit: 1,
+      label: 'Imported floorplan calibration',
+    },
+    metadata: {
+      floorplanImport: {
+        sourceId: reconstruction.source.id,
+        source: reconstruction.source,
+        placement,
+        target,
+        sourceToNative: preview.sourceToNative,
+        mode: 'prewarmed-replicate-astra',
+      },
+    },
+  })
+  const prepared: PreparedImport = {
+    createOps: Object.values(preview.nodes).map((node) => ({
+      node,
+      parentId: node.parentId as AnyNodeId,
+    })),
+    topLevelIds: preview.topLevelIds as AnyNodeId[],
+    sourceToNative: preview.sourceToNative,
+    counts: preview.counts,
+  }
+  return commitNativeImport(prepared, target, guide)
 }

@@ -12,12 +12,22 @@ import {
   type AnyNodeId,
   BuildingNode,
   clearSceneHistory,
+  DoorNode,
   GuideNode,
   LevelNode,
+  SlabNode,
   useScene,
   WallNode,
+  ZoneNode,
 } from '@pascal-app/core'
-import { applyFloorplanImport, captureFloorplanTarget, inspectFloorplanImport } from './native'
+import { type FloorplanReconstruction, rescaleReconstructionNodes } from './curated'
+import {
+  applyFloorplanImport,
+  applyFloorplanReconstruction,
+  captureFloorplanTarget,
+  inspectFloorplanImport,
+  prepareFloorplanReconstruction,
+} from './native'
 import type { FloorplanDraft } from './schema'
 
 globalThis.requestAnimationFrame ??= (callback) => {
@@ -144,6 +154,71 @@ function rasterFile() {
   return new File([new Uint8Array([137, 80, 78, 71])], 'native-test.png', {
     type: 'image/png',
   })
+}
+
+function reconstruction(): FloorplanReconstruction {
+  const building = BuildingNode.parse({ name: 'Sample building' })
+  const level = LevelNode.parse({ name: 'Sample level', parentId: building.id, height: 3 })
+  const wall = WallNode.parse({
+    parentId: level.id,
+    start: [0, 0],
+    end: [10, 0],
+    thickness: 0.2,
+    height: 3,
+  })
+  const door = DoorNode.parse({
+    parentId: wall.id,
+    wallId: wall.id,
+    position: [4, 1.05, 0],
+    width: 0.9,
+    height: 2.1,
+  })
+  const polygon = [
+    [0, 0],
+    [10, 0],
+    [10, 10],
+    [0, 10],
+  ]
+  const zone = ZoneNode.parse({
+    parentId: level.id,
+    name: 'Kitchen',
+    polygon,
+    boundaryWallIds: [wall.id],
+  })
+  const slab = SlabNode.parse({
+    parentId: level.id,
+    polygon,
+    holes: [
+      [
+        [2, 2],
+        [3, 2],
+        [3, 3],
+        [2, 3],
+      ],
+    ],
+  })
+  building.children = [level.id]
+  level.children = [wall.id, zone.id, slab.id]
+  wall.children = [door.id]
+  return {
+    source: {
+      id: 'sample',
+      name: 'Sample',
+      imageUrl: 'data:image/png;base64,iVBORw==',
+      width: 100,
+      height: 100,
+      metersPerPixel: 0.1,
+      sha256: 'test-source',
+    },
+    nodes: Object.fromEntries(
+      [building, level, wall, door, zone, slab].map((node) => [node.id, node]),
+    ),
+    levelId: level.id,
+    wallHeight: 3,
+    scene: { meshes: [] },
+    warnings: [],
+    counts: { walls: 1, openings: 1, zones: 1, items: 0, dimensions: 0, surfaces: 1 },
+  }
 }
 
 beforeEach(() => {
@@ -419,5 +494,109 @@ describe('floorplan native apply', () => {
     ).toEqual([BUILDING_ID, LEVEL_ID].sort())
     expect(useScene.temporal.getState().pastStates).toHaveLength(pastCount)
     expect(useScene.temporal.getState().futureStates).toHaveLength(futureCount)
+  })
+})
+
+describe('curated floorplan placement', () => {
+  const placement = { x: 12, z: -7, rotation: Math.PI / 2 }
+
+  test('calibration scales apertures and slab cutouts before rigid floor placement', () => {
+    const sample = reconstruction()
+    const scaled = rescaleReconstructionNodes(sample.nodes, 0.1, {
+      metersPerPixel: 0.05,
+      wallHeight: 2.5,
+    })
+    const wall = Object.values(scaled).find((node) => node.type === 'wall')!
+    const door = Object.values(scaled).find((node) => node.type === 'door')!
+    const slab = Object.values(scaled).find((node) => node.type === 'slab')!
+    expect(wall.end).toEqual([5, 0])
+    expect(wall.thickness).toBe(0.1)
+    expect(door.position[0]).toBe(2)
+    expect(door.width).toBe(0.45)
+    expect(slab.holes[0]).toEqual([
+      [1, 1],
+      [1.5, 1],
+      [1.5, 1.5],
+      [1, 1.5],
+    ])
+    expect(Object.values(sample.nodes).find((node) => node.type === 'wall')!.end).toEqual([10, 0])
+
+    const preview = prepareFloorplanReconstruction(
+      sample,
+      captureFloorplanTarget(LEVEL_ID),
+      placement,
+    )
+    const placedWall = Object.values(preview.nodes).find((node) => node.type === 'wall')!
+    const placedDoor = Object.values(preview.nodes).find((node) => node.type === 'door')!
+    const placedZone = Object.values(preview.nodes).find((node) => node.type === 'zone')!
+    const placedSlab = Object.values(preview.nodes).find((node) => node.type === 'slab')!
+    expect(placedWall.start[0]).toBeCloseTo(7)
+    expect(placedWall.start[1]).toBeCloseTo(-2)
+    expect(placedWall.end[0]).toBeCloseTo(7)
+    expect(placedWall.end[1]).toBeCloseTo(-12)
+    expect(placedDoor.parentId).toBe(placedWall.id)
+    expect(placedDoor.wallId).toBe(placedWall.id)
+    expect(placedDoor.position).toEqual([4, 1.05, 0])
+    expect(placedWall.children).toContain(placedDoor.id)
+    expect(placedZone.name).toBe('Kitchen')
+    expect(placedZone.boundaryWallIds).toEqual([placedWall.id])
+    expect(placedSlab.holes[0]![0]![0]).toBeCloseTo(9)
+    expect(placedSlab.holes[0]![0]![1]).toBeCloseTo(-4)
+    for (const id of preview.topLevelIds) expect(preview.nodes[id]!.parentId).toBe(LEVEL_ID)
+    expect(
+      Object.values(useScene.getState().nodes)
+        .map((node) => node.id)
+        .sort(),
+    ).toEqual([BUILDING_ID, LEVEL_ID].sort())
+  })
+
+  test('confirmation commits the placed graph and matching editable guide in one undo step', async () => {
+    const result = await applyFloorplanReconstruction({
+      reconstruction: reconstruction(),
+      target: captureFloorplanTarget(LEVEL_ID),
+      placement,
+      opacity: 42,
+      signal: new AbortController().signal,
+    })
+    const guide = useScene.getState().nodes[result.guideId as AnyNodeId] as ReturnType<
+      typeof GuideNode.parse
+    >
+    expect(guide.parentId).toBe(LEVEL_ID)
+    expect(guide.position).toEqual([12, 0.015, -7])
+    expect(guide.rotation).toEqual([0, Math.PI / 2, 0])
+    expect(guide.opacity).toBe(42)
+    expect(guide.scaleReference!.start[0]).toBeCloseTo(7)
+    expect(guide.scaleReference!.start[1]).toBeCloseTo(-2)
+    expect(guide.scaleReference!.end[1]).toBeCloseTo(-12)
+    expect(useScene.temporal.getState().pastStates).toHaveLength(1)
+    useScene.temporal.getState().undo()
+    expect(
+      Object.values(useScene.getState().nodes)
+        .map((node) => node.id)
+        .sort(),
+    ).toEqual([BUILDING_ID, LEVEL_ID].sort())
+    useScene.temporal.getState().redo()
+    for (const id of result.nodeIds)
+      expect(useScene.getState().nodes[id as AnyNodeId]).toBeDefined()
+  })
+
+  test('cancel during source retention adds no late geometry or history', async () => {
+    const controller = new AbortController()
+    assetSaveHook = () => controller.abort()
+    await expect(
+      applyFloorplanReconstruction({
+        reconstruction: reconstruction(),
+        target: captureFloorplanTarget(LEVEL_ID),
+        placement,
+        opacity: 35,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow()
+    expect(
+      Object.values(useScene.getState().nodes)
+        .map((node) => node.id)
+        .sort(),
+    ).toEqual([BUILDING_ID, LEVEL_ID].sort())
+    expect(useScene.temporal.getState().pastStates).toHaveLength(0)
   })
 })

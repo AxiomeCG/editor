@@ -52,7 +52,7 @@
     calibrationPick: document.querySelector('#calibration-pick'),
     calibrationDistance: document.querySelector('#calibration-distance'),
     calibrationStatus: document.querySelector('#calibration-status'),
-    pointInputs: ['x1', 'y1', 'x2', 'y2'].map(id => document.querySelector(`#calibration-${id}`)),
+    pointInputs: ['x1', 'y1', 'x2', 'y2'].map((id) => document.querySelector(`#calibration-${id}`)),
     native3dHost: document.querySelector('#native-3d-host'),
     native3dControls: document.querySelector('#native-3d-controls'),
     native3dStatus: document.querySelector('#native-3d-status'),
@@ -83,28 +83,60 @@
   function renderCalibration() {
     const source = state.manifest?.source
     if (!source) return
-    const image = elements.evidenceImage, overlay = elements.calibrationOverlay
+    const image = elements.evidenceImage,
+      overlay = elements.calibrationOverlay
     overlay.setAttribute('viewBox', `0 0 ${source.width} ${source.height}`)
-    Object.assign(overlay.style, { left: `${image.offsetLeft}px`, top: `${image.offsetTop}px`, width: `${image.clientWidth}px`, height: `${image.clientHeight}px` })
+    Object.assign(overlay.style, {
+      left: `${image.offsetLeft}px`,
+      top: `${image.offsetTop}px`,
+      width: `${image.clientWidth}px`,
+      height: `${image.clientHeight}px`,
+    })
     overlay.replaceChildren()
     const svg = (tag, attributes) => {
       const element = document.createElementNS('http://www.w3.org/2000/svg', tag)
-      for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value))
+      for (const [key, value] of Object.entries(attributes))
+        element.setAttribute(key, String(value))
       overlay.append(element)
       return element
     }
     if (state.calibrationPoints.length === 2) {
       const [a, b] = state.calibrationPoints
-      svg('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: '#2166d1', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' })
+      svg('line', {
+        x1: a[0],
+        y1: a[1],
+        x2: b[0],
+        y2: b[1],
+        stroke: '#2166d1',
+        'stroke-width': 2,
+        'vector-effect': 'non-scaling-stroke',
+      })
     }
     state.calibrationPoints.forEach((point, index) => {
-      svg('circle', { cx: point[0], cy: point[1], r: 6, fill: '#2166d1', stroke: '#ffffff', 'stroke-width': 2 })
-      const text = svg('text', { x: point[0] + 10, y: point[1] - 8, fill: '#154b9b', 'font-size': 16, 'font-weight': 700 })
+      svg('circle', {
+        cx: point[0],
+        cy: point[1],
+        r: 6,
+        fill: '#2166d1',
+        stroke: '#ffffff',
+        'stroke-width': 2,
+      })
+      const text = svg('text', {
+        x: point[0] + 10,
+        y: point[1] - 8,
+        fill: '#154b9b',
+        'font-size': 16,
+        'font-weight': 700,
+      })
       text.textContent = String(index + 1)
     })
     if (state.picking && state.calibrationCursor) {
       const [x, y] = state.calibrationCursor
-      svg('path', { d: `M ${x - 8} ${y} H ${x + 8} M ${x} ${y - 8} V ${y + 8}`, stroke: '#2166d1', 'stroke-width': 1.5 })
+      svg('path', {
+        d: `M ${x - 8} ${y} H ${x + 8} M ${x} ${y - 8} V ${y + 8}`,
+        stroke: '#2166d1',
+        'stroke-width': 1.5,
+      })
     }
     elements.calibrationStage.dataset.picking = String(state.picking)
     elements.calibrationPick.setAttribute('aria-pressed', String(state.picking))
@@ -113,8 +145,10 @@
   function updateCalibration() {
     state.calibration = null
     clearNativePreview('Scale changed. Generate the native preview again.')
+    setNotice(elements.previewStatus, 'Scale changed; regenerate locally to update the native graph.', 'warning')
     const distance = Number(elements.calibrationDistance.value)
     if (state.calibrationPoints.length !== 2 || !Number.isFinite(distance) || distance <= 0) {
+      elements.metersPerPixel.value = '0.015'
       elements.calibrationStatus.textContent = `${state.calibrationPoints.length}/2 points selected. Enter the real distance in metres.`
       renderCalibration()
       return
@@ -122,8 +156,10 @@
     const [start, end] = state.calibrationPoints
     const pixels = Math.hypot(end[0] - start[0], end[1] - start[1])
     const scale = distance / pixels
-    if (pixels < 1 || scale < .0001 || scale > 1) {
-      elements.calibrationStatus.textContent = 'Choose distinct endpoints and a distance giving 0.0001–1 m per pixel.'
+    if (pixels < 1 || scale < 0.0001 || scale > 1) {
+      elements.metersPerPixel.value = '0.015'
+      elements.calibrationStatus.textContent =
+        'Choose distinct endpoints and a distance giving 0.0001–1 m per pixel.'
       renderCalibration()
       return
     }
@@ -138,7 +174,9 @@
     if (state.calibrationPoints.length === 2) state.calibrationPoints = []
     state.calibrationPoints.push(point)
     const values = state.calibrationPoints.flat()
-    elements.pointInputs.forEach((input, index) => { input.value = values[index] === undefined ? '' : values[index].toFixed(2) })
+    elements.pointInputs.forEach((input, index) => {
+      input.value = values[index] === undefined ? '' : values[index].toFixed(2)
+    })
     if (state.calibrationPoints.length === 2) state.picking = false
     updateCalibration()
   }
@@ -156,7 +194,10 @@
     try {
       const { mountNativePreview } = await import('/native-3d.js')
       if (state.preview !== preview || elements.native3dHost.hidden || state.native3d) return
-      state.native3d = mountNativePreview(elements.native3dHost, preview.scene, text => { elements.native3dStatus.textContent = text })
+      state.native3d = mountNativePreview(elements.native3dHost, preview.scene, (text) => {
+        elements.native3dStatus.textContent = text
+      })
+      state.native3d.cutaway(document.querySelector('#native-3d-cutaway').checked)
     } catch (error) {
       elements.native3dStatus.textContent = `3D preview failed: ${error.message}`
     }
@@ -607,7 +648,12 @@
       const sourceCell = document.createElement('th')
       sourceCell.scope = 'row'
       sourceCell.textContent = mapping.sourceId
-      const statusClass = mapping.status === 'converted' ? 'converted' : mapping.status === 'approximated' ? 'approximated' : 'unresolved'
+      const statusClass =
+        mapping.status === 'converted'
+          ? 'converted'
+          : mapping.status === 'approximated'
+            ? 'approximated'
+            : 'unresolved'
       const statusCell = createElement('td', mapping.status, `mapping-status ${statusClass}`)
       const nodeIds =
         Array.isArray(mapping.nodeIds) && mapping.nodeIds.length > 0
@@ -850,52 +896,98 @@
       state.calibration = null
       clearNativePreview('Choose a measured scale, then regenerate the native graph.')
       state.calibrationCursor = [state.manifest.source.width / 2, state.manifest.source.height / 2]
-      elements.calibrationStatus.textContent = 'Select the first endpoint, then the second. Arrow keys move the cursor; Enter selects.'
+      elements.calibrationStatus.textContent =
+        'Select the first endpoint, then the second. Arrow keys move the cursor; Enter selects.'
       elements.calibrationStage.focus()
     }
     renderCalibration()
   })
   document.querySelector('#calibration-reset').addEventListener('click', () => {
-    state.calibrationPoints = []; state.calibration = null; state.picking = false
-    elements.pointInputs.forEach(input => { input.value = '' })
+    state.calibrationPoints = []
+    state.calibration = null
+    state.picking = false
+    elements.pointInputs.forEach((input) => {
+      input.value = ''
+    })
     elements.metersPerPixel.value = '0.015'
     updateCalibration()
   })
   elements.calibrationDistance.addEventListener('input', updateCalibration)
-  elements.pointInputs.forEach(input => input.addEventListener('input', () => {
-    const values = elements.pointInputs.map(input => input.value === '' ? NaN : Number(input.value))
-    const source = state.manifest?.source
-    if (!source || values.some(value => !Number.isFinite(value) || value < 0) ||
-      values[0] > source.width || values[2] > source.width || values[1] > source.height || values[3] > source.height) return
-    state.calibrationPoints = [[values[0], values[1]], [values[2], values[3]]]
-    state.picking = false; updateCalibration()
-  }))
-  elements.calibrationStage.addEventListener('click', event => {
+  elements.pointInputs.forEach((input) =>
+    input.addEventListener('input', () => {
+      const values = elements.pointInputs.map((input) =>
+        input.value === '' ? NaN : Number(input.value),
+      )
+      const source = state.manifest?.source
+      if (
+        !source ||
+        values.some((value) => !Number.isFinite(value) || value < 0) ||
+        values[0] > source.width ||
+        values[2] > source.width ||
+        values[1] > source.height ||
+        values[3] > source.height
+      )
+        return
+      state.calibrationPoints = [
+        [values[0], values[1]],
+        [values[2], values[3]],
+      ]
+      state.picking = false
+      updateCalibration()
+    }),
+  )
+  elements.calibrationStage.addEventListener('click', (event) => {
     if (!state.picking) return
-    const source = state.manifest.source, rect = elements.evidenceImage.getBoundingClientRect()
+    const source = state.manifest.source,
+      rect = elements.evidenceImage.getBoundingClientRect()
     const scale = Math.min(rect.width / source.width, rect.height / source.height)
     const x = (event.clientX - rect.left - (rect.width - source.width * scale) / 2) / scale
     const y = (event.clientY - rect.top - (rect.height - source.height * scale) / 2) / scale
     if (x >= 0 && y >= 0 && x <= source.width && y <= source.height) pickCalibrationPoint([x, y])
   })
-  elements.calibrationStage.addEventListener('keydown', event => {
+  elements.calibrationStage.addEventListener('keydown', (event) => {
     if (!state.picking) return
-    const source = state.manifest.source, point = state.calibrationCursor, step = event.shiftKey ? 10 : 1
+    const source = state.manifest.source,
+      point = state.calibrationCursor,
+      step = event.shiftKey ? 10 : 1
     if (event.key.startsWith('Arrow')) {
       event.preventDefault()
-      point[0] = Math.max(0, Math.min(source.width, point[0] + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0)))
-      point[1] = Math.max(0, Math.min(source.height, point[1] + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0)))
+      point[0] = Math.max(
+        0,
+        Math.min(
+          source.width,
+          point[0] + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0),
+        ),
+      )
+      point[1] = Math.max(
+        0,
+        Math.min(
+          source.height,
+          point[1] + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0),
+        ),
+      )
       renderCalibration()
-    } else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pickCalibrationPoint([...point]) }
-    else if (event.key === 'Escape') { state.picking = false; renderCalibration() }
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      pickCalibrationPoint([...point])
+    } else if (event.key === 'Escape') {
+      state.picking = false
+      renderCalibration()
+    }
   })
   new ResizeObserver(renderCalibration).observe(elements.calibrationStage)
   elements.evidenceImage.addEventListener('load', renderCalibration)
   elements.view2d.addEventListener('click', () => showNativeView('2d'))
   elements.view3d.addEventListener('click', () => showNativeView('3d'))
-  document.querySelector('#native-3d-reset').addEventListener('click', () => state.native3d?.reset())
-  document.querySelector('#native-3d-top').addEventListener('click', () => state.native3d?.reset(true))
-  document.querySelector('#native-3d-cutaway').addEventListener('change', event => state.native3d?.cutaway(event.target.checked))
+  document
+    .querySelector('#native-3d-reset')
+    .addEventListener('click', () => state.native3d?.reset())
+  document
+    .querySelector('#native-3d-top')
+    .addEventListener('click', () => state.native3d?.reset(true))
+  document
+    .querySelector('#native-3d-cutaway')
+    .addEventListener('change', (event) => state.native3d?.cutaway(event.target.checked))
   document.querySelectorAll('input[name="comparison-source-view"]').forEach((radio) => {
     radio.addEventListener('change', renderEvidence)
   })

@@ -48,7 +48,7 @@ import { deleteLevelWithFallbackSelection } from '../../lib/level-selection'
 import { useLinearDisplay } from '../../lib/use-linear-display'
 import { cn } from '../../lib/utils'
 import { captureFloorplanTarget, type FloorplanTarget } from '../../lib/floorplan-import/native'
-import type { FloorplanGenerator } from '../../lib/floorplan-import/schema'
+import type { FloorplanImportProvider } from '../../lib/floorplan-import/curated'
 import { FloorplanImportDialog } from './floorplan-import-dialog'
 import { ActionButton } from './controls/action-button'
 import { SliderControl } from './controls/slider-control'
@@ -134,7 +134,7 @@ function LevelRow({
   onDuplicate,
   onPaste,
   onRequestDelete,
-  generateFloorplan,
+  floorplanImport,
 }: {
   level: LevelNode
   isSelected: boolean
@@ -145,7 +145,7 @@ function LevelRow({
   onDuplicate: (preset?: LevelDuplicatePreset) => void
   onPaste?: () => void
   onRequestDelete: () => void
-  generateFloorplan?: FloorplanGenerator
+  floorplanImport?: FloorplanImportProvider
 }) {
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -367,7 +367,7 @@ function LevelRow({
       />
       {floorplanDialogOpen && (
         <FloorplanImportDialog
-          generateFloorplan={generateFloorplan}
+          floorplanImport={floorplanImport}
           level={level}
           onApplied={onSelect}
           onOpenChange={setFloorplanDialogOpen}
@@ -388,7 +388,7 @@ function SortableLevelRow({
   onDuplicate,
   onPaste,
   onRequestDelete,
-  generateFloorplan,
+  floorplanImport,
 }: {
   level: LevelNode
   isSelected: boolean
@@ -396,7 +396,7 @@ function SortableLevelRow({
   onDuplicate: (preset?: LevelDuplicatePreset) => void
   onPaste?: () => void
   onRequestDelete: () => void
-  generateFloorplan?: FloorplanGenerator
+  floorplanImport?: FloorplanImportProvider
 }) {
   const {
     attributes,
@@ -421,7 +421,7 @@ function SortableLevelRow({
       <LevelRow
         dragHandleProps={{ ...attributes, ...listeners }}
         dragHandleRef={setActivatorNodeRef}
-        generateFloorplan={generateFloorplan}
+        floorplanImport={floorplanImport}
         isDragging={isDragging}
         isSelected={isSelected}
         level={level}
@@ -436,7 +436,7 @@ function SortableLevelRow({
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export function FloatingLevelSelector({ generateFloorplan }: { generateFloorplan?: FloorplanGenerator } = {}) {
+export function FloatingLevelSelector({ floorplanImport }: { floorplanImport?: FloorplanImportProvider } = {}) {
   const selectedBuildingId = useViewer((s) => s.selection.buildingId)
   const levelId = useViewer((s) => s.selection.levelId)
   const setSelection = useViewer((s) => s.setSelection)
@@ -674,7 +674,7 @@ export function FloatingLevelSelector({ generateFloorplan }: { generateFloorplan
                       key={level.id}
                     >
                       <SortableLevelRow
-                        generateFloorplan={generateFloorplan}
+                        floorplanImport={floorplanImport}
                         isSelected={isSelected}
                         level={level}
                         onDuplicate={(preset) => handleDuplicateLevel(level, preset)}

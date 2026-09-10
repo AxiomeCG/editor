@@ -294,7 +294,3 @@ export type FloorplanProgress =
   | 'interpreting'
   | 'reviewing'
   | 'checking'
-export type FloorplanGenerator = (
-  request: FloorplanRequest,
-  options: { signal: AbortSignal; onProgress: (stage: FloorplanProgress) => void },
-) => Promise<FloorplanResponse>

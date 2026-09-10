@@ -7,10 +7,15 @@ import { comparisonOverlayPath, loadComparisonManifest } from './comparisons'
 import { type SamRun, type Source, segment, validatePrompts } from './sam'
 
 export async function serve(source: Source, out: string, port: number, maxRequests: number) {
-  const [{ buildNativeMaskPreview }, { renderNativePreviewSvg }, { buildNativePreviewScene }, { readSourceLabels }] = await Promise.all([
+  const [
+    { buildNativeMaskPreview },
+    { renderNativePreviewSvg },
+    { buildNativePreviewScene },
+    { readSourceLabels },
+  ] = await Promise.all([
     import('./mask-to-native'),
     import('./native-svg'),
-    import('./native-3d'),
+    import('../lib/floorplan-native-scene'),
     import('./source-labels'),
   ])
   await mkdir(out, { recursive: true, mode: 0o700 })
@@ -34,20 +39,31 @@ export async function serve(source: Source, out: string, port: number, maxReques
       variantId: z.string().max(80),
       metersPerPixel: z.number().finite().min(0.0001).max(1),
       wallHeight: z.number().finite().min(0.5).max(12),
-      calibration: z.object({
-        start: z.tuple([z.number().finite().min(0).max(source.width), z.number().finite().min(0).max(source.height)]),
-        end: z.tuple([z.number().finite().min(0).max(source.width), z.number().finite().min(0).max(source.height)]),
-        distanceMeters: z.number().finite().positive().max(10_000),
-      }).refine(value => {
-        const pixels = Math.hypot(value.end[0] - value.start[0], value.end[1] - value.start[1])
-        const scale = value.distanceMeters / pixels
-        return pixels >= 1 && scale >= 0.0001 && scale <= 1
-      }, 'Calibration requires distinct source points and a scale within 0.0001–1 m/px').optional(),
+      calibration: z
+        .object({
+          start: z.tuple([
+            z.number().finite().min(0).max(source.width),
+            z.number().finite().min(0).max(source.height),
+          ]),
+          end: z.tuple([
+            z.number().finite().min(0).max(source.width),
+            z.number().finite().min(0).max(source.height),
+          ]),
+          distanceMeters: z.number().finite().positive().max(10_000),
+        })
+        .refine((value) => {
+          const pixels = Math.hypot(value.end[0] - value.start[0], value.end[1] - value.start[1])
+          const scale = value.distanceMeters / pixels
+          return pixels >= 1 && scale >= 0.0001 && scale <= 1
+        }, 'Calibration requires distinct source points and a scale within 0.0001–1 m/px')
+        .optional(),
     })
     .strict()
   let sourcePixels: Buffer | undefined
   let previewBusy = false
-  let sourceLabels: Promise<{ labels: import('./source-labels').SourceLabel[]; issues: string[] }> | undefined
+  let sourceLabels:
+    | Promise<{ labels: import('./source-labels').SourceLabel[]; issues: string[] }>
+    | undefined
   let native3dClient: Promise<string> | undefined
   const token = randomUUID()
   const origin = `http://127.0.0.1:${port}`
@@ -89,13 +105,16 @@ export async function serve(source: Source, out: string, port: number, maxReques
         if (request.method === 'GET' && url.pathname === '/native-3d.js') {
           native3dClient ??= Bun.build({
             entrypoints: [join(import.meta.dir, 'native-3d-client.js')],
-            target: 'browser', minify: true,
+            target: 'browser',
+            minify: true,
             define: { 'process.env.NODE_ENV': JSON.stringify('production') },
-          }).then(async result => {
-            if (!result.success) throw new Error(result.logs.map(log => log.message).join('\\n'))
+          }).then(async (result) => {
+            if (!result.success) throw new Error(result.logs.map((log) => log.message).join('\\n'))
             return result.outputs[0]!.text()
           })
-          return new Response(await native3dClient, { headers: { ...securityHeaders, 'Content-Type': 'text/javascript' } })
+          return new Response(await native3dClient, {
+            headers: { ...securityHeaders, 'Content-Type': 'text/javascript' },
+          })
         }
         if (request.method === 'GET' && url.pathname === '/app.js')
           return new Response(Bun.file(join(import.meta.dir, 'app.js')), {
@@ -134,15 +153,26 @@ export async function serve(source: Source, out: string, port: number, maxReques
           if (!isLocalJsonRequest(request))
             return json({ error: 'Local previews require the same-origin lab page and JSON.' }, 403)
           const input = previewInput.parse(await request.json())
-          if (input.calibration) input.metersPerPixel = input.calibration.distanceMeters /
-            Math.hypot(input.calibration.end[0] - input.calibration.start[0], input.calibration.end[1] - input.calibration.start[1])
+          if (input.calibration)
+            input.metersPerPixel =
+              input.calibration.distanceMeters /
+              Math.hypot(
+                input.calibration.end[0] - input.calibration.start[0],
+                input.calibration.end[1] - input.calibration.start[1],
+              )
           const variant = comparisons.variants.find((item) => item.id === input.variantId)
           if (!variant) return json({ error: 'Unknown comparison variant.' }, 404)
           if (previewBusy) return json({ error: 'A local preview is already running.' }, 409)
           previewBusy = true
           try {
             sourcePixels ??= await sharp(source.png).ensureAlpha().raw().toBuffer()
-            sourceLabels ??= readSourceLabels(source.png, source.width, source.height, out, source.sha256)
+            sourceLabels ??= readSourceLabels(
+              source.png,
+              source.width,
+              source.height,
+              out,
+              source.sha256,
+            )
             const recognized = await sourceLabels
             const preview = await buildNativeMaskPreview(
               variant,
@@ -154,7 +184,11 @@ export async function serve(source: Source, out: string, port: number, maxReques
               },
               input,
             )
-            return json({ ...preview, svg: await renderNativePreviewSvg(preview), scene: buildNativePreviewScene(preview) })
+            return json({
+              ...preview,
+              svg: await renderNativePreviewSvg(preview),
+              scene: buildNativePreviewScene(preview),
+            })
           } finally {
             previewBusy = false
           }

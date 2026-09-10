@@ -300,7 +300,7 @@ Seven visible swing-door locations were inspected: Bedroom 3, Bedroom 2, both ba
 | Replicate / Sol | 23 | 1 | 1 | 2 |
 | Replicate / Astra | 19 | 1 | 1 | 6 |
 
-Action counts are not accuracy scores. Repair flags leave the original overlay footprint visible but prevent strict native conversion; rejecting one large mixed wall contour can remove many potential hosts. More rendered nodes therefore does not establish a better reviewer.
+Action counts are not accuracy scores. Repair flags preserve the original overlay footprint. The initial strict converter excluded flagged candidates; the later source-supported reconstructor below repairs them approximately instead of discarding entire mixed wall components.
 
 ### Measured cost and workflow choices
 
@@ -311,37 +311,47 @@ Action counts are not accuracy scores. Repair flags leave the original overlay f
 
 Output includes reasoning tokens. The two successful Gemini reviews total **$0.339236**, excluding extraction. The earlier Flash 429 produced no usable correction and reported zero cost. Replicate GPU billing was not reported. Sol/Astra production API usage and price remain unknown; a zero entry in a local Codex model catalog is not a free production price.
 
-Workflow choices: local Yytsi for no additional hosted inference charge but substantial manual repair; raw Replicate for stronger door coverage with separately billed GPU inference; one semantic review for label/noise triage; proposed Replicate → Astra → source-supported contour/aperture repair → targeted verification for higher quality. The last repair/verification workflow is not yet a measured, complete reconstruction pipeline. GPT Image was not run and generated cleanup remains outside geometric authority.
+Workflow choices: local Yytsi avoids another hosted inference charge but needs substantial semantic repair; raw Replicate has stronger door coverage with separately billed GPU inference; one semantic review provides label/noise triage. Replicate → Astra → local source-supported reconstruction is now implemented for the retained sample, as described below. Production inference cost and accuracy across other drawings remain unmeasured. GPT Image was not run.
 
 Evidence under `editor/.sam3-lab/comparisons/`: `all-variants.png`, `door-and-error-comparison.png`, `source-inspected-regions.json`, `comparison-assessment.json`, and each review's original correction JSON and rendered overlays. Region boxes are review crops only, not replacement geometry.
 
-### Executed isolated native previews
+### Source-supported reconstruction and native import
 
-The comparison workbench at `http://127.0.0.1:3117/#comparison-workbench` exposes all eight saved variants, source/overlay switching, source-checked judgments, measured/unknown costs, and local native preview generation. The preview reuses the canonical Pascal structural compiler and actual built-in floorplan builders, not a substitute SVG drawing algorithm. It produces an isolated graph and downloadable JSON; it never applies that graph to a scene.
+The workbench at `http://127.0.0.1:3117/#comparison-workbench` compares all eight retained variants. Generation is local and read-only: actual Pascal plan builders and native 3D primitives render the resulting graph; JSON can be downloaded without changing a scene.
 
-The ledger's rounded rings are replaced with the original full-precision extractor rings by class and ordinal before conversion. Opening fitting uses filled-area moments, rather than vertex-count-weighted PCA, so duplicate closure points and contour sampling density do not skew the axis. A supplied centerline outside its own mask is not geometric authority. Both jambs require source-ink support and at least one requires an accepted wall-mask anchor; a bounded host bridge can join perpendicular jambs. These are preview fitting assumptions, not independently reviewed repairs.
+The reconstructor restores full-precision extractor rings, preserves substantial walls inside mixed/repair-flagged contours, fits polygon cross-sections, regularizes dominant directions, preserves short returns and genuine oblique angles, and snaps nearby junctions. Apertures can imply bounded host-wall spans; nearby door/window supports bridge only bounded gaps. Door swing evidence comes from source arcs. Source-supported window rails can recover a proposed aperture, and corner glazing can produce two separately hosted windows. A review box alone never becomes a wall or opening.
 
-The actual eight-variant HTTP replay used **0.015 m/source pixel** and **2.8 m wall height**. Those are editable assumptions, not recovered calibration. Hinge, swing, and window style remain native defaults rather than inferred source semantics. All emitted openings had consistent wall parents, wall IDs, child links, and positive finite widths. No slabs or zones were generated.
+OCR labels from the unchanged drawing name approximate native zones. Source evidence supports approximate prop blocks. Open-plan partitions and inferred footprints are not surveyed geometry; native object counts are not accuracy scores.
 
-| Variant | Native walls | Native doors | Native windows |
-|---|---:|---:|---:|
-| Yytsi raw | 31 | 10 | 6 |
-| Yytsi + Gemini | 25 | 0 | 12 |
-| Yytsi + Sol | 28 | 1 | 13 |
-| Yytsi + Astra | 30 | 1 | 12 |
-| Replicate raw | 36 | 6 | 8 |
-| Replicate + Gemini | 36 | 7 | 7 |
-| Replicate + Sol | 25 | 4 | 6 |
-| Replicate + Astra | 22 | 4 | 3 |
+The executed eight-variant replay at **0.015 m/px, 2.5 m wall height** produced:
 
-These are converter outputs, **not accuracy scores**. Yytsi raw's ten native door objects include false positives. Replicate + Astra retains door evidence at all seven inspected locations, but only four currently have eligible native hosts: rejecting/repair-flagging mixed supporting wall contours leaves visible gaps. `needs_repair` candidates and missing-feature boxes remain unresolved and never become replacement geometry. Replicate + Gemini renders a more complete automatic preview while accepting known mixed/false contours. None is an import-ready, repaired floorplan.
+| Variant | Walls | Doors | Windows | Zones | Props |
+|---|---:|---:|---:|---:|---:|
+| Yytsi raw | 63 | 24 | 11 | 10 | 1 |
+| Yytsi + Gemini | 53 | 4 | 17 | 10 | 2 |
+| Yytsi + Sol | 44 | 5 | 19 | 10 | 2 |
+| Yytsi + Astra | 43 | 3 | 17 | 10 | 4 |
+| Replicate raw | 34 | 6 | 11 | 9 | 1 |
+| Replicate + Gemini | 34 | 7 | 10 | 9 | 1 |
+| Replicate + Sol | 34 | 7 | 11 | 9 | 3 |
+| Replicate + Astra | 34 | 7 | 11 | 10 | 3 |
+
+Yytsi's extra objects include text/fixture false positives. Replicate + Astra remains the strongest source-inspected combination on this drawing. Compared with the initial strict preview's 22 walls, four doors and three windows, source-supported reconstruction retains all seven inspected swing-door locations and the bottom-left corner glazing. This is not a labeled generalization benchmark.
+
+#### Curated editor flow
+
+On an empty floor, **Actions → Import from floorplan…** opens the Replicate + Astra sample. `apps/editor/public/floorplans/replicate-astra.{json,png}` retain the graph and original raster; `floorplan-reconstruction-client.ts` regenerates native primitive meshes locally at the selected floor height. The previous hosted SAM/interpreter/reviewer application route and client/server were removed. The isolated historical comparison lab remains available.
+
+The prepared sample uses the verified 7 m reference: source endpoints `[98.53846153846155,48.387259615384615]` and `[498.40769230769234,49.075360576923075]`, giving **0.017505697105882432 m/px**. At this scale it contains **34 walls, seven doors, 11 windows, 10 named zones and seven approximate props**. The editor adds 10 editable zone-floor slabs. Two-point recalibration remains available.
+
+The translucent image can be dragged in 2D or 3D, positioned numerically, rotated and faded. Preview geometry uses the same level-local pivot/yaw as commit and rises from the selected floor, not world Y=0. The 280 ms ease-out starts after the first GPU frame; reduced motion and keyboard generation skip the rise. Confirm retains the raster as an editable guide and commits native geometry in one history step. Cancel makes no authored scene changes.
 
 Verification:
 
-- The retained pre-fix replay generated zero native doors in every variant. After fixing contour acceptance and aperture fitting, all eight endpoints rendered actual native SVGs with the counts above.
-- **18 focused tests passed, 70 assertions**, including regressions for closed contours, an unrelated supplied centerline, perpendicular jambs, repair flags/missing boxes, and absence of accepted wall support. The closure/PCA regression failed before the filled-area-moment fix.
-- Chromium exercised raw/Gemini/Astra selection and generation, original/overlay switching, scale-change invalidation, and native JSON download. Desktop and 390 px mobile screenshots were inspected; mobile document width is 390 px with no horizontal page overflow. The comparison table scrolls within its own container.
-- Both aggregate evidence image routes returned PNGs successfully. Local verification made no additional inference requests; the saved SAM request count remained five.
-- The final application typecheck reports only existing linked Environment errors in `river/terrain.ts` and `surroundings/neighborhood-shadows.tsx`; no lab or native-import errors were reported. Those unrelated files were not changed.
+- **29 focused tests passed, 138 assertions** for reconstruction, feature extraction and native import, including short/oblique walls, wall hosts, rotated aperture ownership, scaled slab holes, atomic undo/redo and cancellation during source retention.
+- Chromium verified two-point calibration, stale-response suppression, source/overlay switching, native JSON download, and rendered mobile 3D at 390 px without document overflow.
+- Live editor verification on **Floor 1** exercised 2D image dragging, 90° rotation, signed numeric coordinates, opacity, generation, cancel, confirm and undo. Confirmation at `(2, -1.5)`, yaw 90°, created one reference plus the native graph; one undo removed the entire import while preserving the existing scene.
+- No new model inference was made; the saved SAM request ledger remained at five entries.
+- Final application typechecking reports only the linked Environment error in `surroundings/neighborhood-shadows.tsx:38` (union complexity). No importer or reconstructor type errors were reported; that unrelated file was not modified.
 
-Proof artifacts: `native-preview-before.json`, `native-preview-after.json`, `verification/browser-proof.json`, the desktop/mobile and native-preview screenshots, and `verification/downloads/replicate-astra.native-preview.json`, all under `editor/.sam3-lab/comparisons/`. The original source and correction evidence remain unchanged.
+Proof: `editor/.sam3-lab/comparisons/reconstruction/` contains each replay JSON/SVG/PNG, native mesh snapshots, calibration/browser evidence, mobile 3D and confirmed-import screenshots. Original extraction and correction evidence is unchanged.

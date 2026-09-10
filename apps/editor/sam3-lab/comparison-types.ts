@@ -1,5 +1,6 @@
 import type { AnyNode } from '@pascal-app/core'
 import type { PlanPoint } from '../../../packages/editor/src/lib/floorplan-import/schema'
+import type { NativeSceneData } from '../../../packages/editor/src/lib/floorplan-import/curated'
 
 export type StructuralClass = 'wall' | 'door' | 'window'
 
@@ -90,7 +91,14 @@ export interface NativeSourceMapping {
 export interface NativeMaskPreview {
   nodes: Record<string, AnyNode>
   levelId: string
-  counts: { walls: number; doors: number; windows: number; slabs: number; zones: number; props: number }
+  counts: {
+    walls: number
+    doors: number
+    windows: number
+    slabs: number
+    zones: number
+    props: number
+  }
   mappings: NativeSourceMapping[]
   issues: string[]
   assumptions: string[]
@@ -99,4 +107,5 @@ export interface NativeMaskPreview {
 
 export interface NativePreviewResponse extends NativeMaskPreview {
   svg: string
+  scene: NativeSceneData
 }

@@ -1,10 +1,9 @@
-import { addReconstructionContext } from './reconstruction-context'
-import type { SourceLabel } from './source-labels'
 import {
   type FloorplanStructureOpening,
   type FloorplanStructureWall,
   prepareFloorplanStructurePreview,
 } from '../../../packages/editor/src/lib/floorplan-import/native'
+import type { PlanPoint } from '../../../packages/editor/src/lib/floorplan-import/schema'
 import type {
   ComparisonCandidate,
   ComparisonVariant,
@@ -13,7 +12,8 @@ import type {
   NativeSourceMapping,
   StructuralClass,
 } from './comparison-types'
-import type { PlanPoint } from '../../../packages/editor/src/lib/floorplan-import/schema'
+import { addReconstructionContext } from './reconstruction-context'
+import type { SourceLabel } from './source-labels'
 
 const MAX_ANALYSIS_SIDE = 1600
 const GEOMETRY_EPSILON = 1e-6
@@ -30,7 +30,10 @@ type PixelWall = {
   end: PlanPoint
   thickness: number
   sourceIds: string[]
-  derivation: 'retained-wall-mask-paired-face-axis' | 'opening-mask-jamb-bridge' | 'opening-implied-host'
+  derivation:
+    | 'retained-wall-mask-paired-face-axis'
+    | 'opening-mask-jamb-bridge'
+    | 'opening-implied-host'
 }
 
 type PixelOpening = {
@@ -224,7 +227,8 @@ function resolveCandidate(candidate: ComparisonCandidate): ResolvedCandidate | s
     return `Candidate “${candidate.id}” was classified as background: ${decision.evidence}`
   return {
     candidate,
-    structuralClass: decision.correctedClass === 'uncertain' ? candidate.class : decision.correctedClass,
+    structuralClass:
+      decision.correctedClass === 'uncertain' ? candidate.class : decision.correctedClass,
   }
 }
 
@@ -273,58 +277,92 @@ function median(values: number[]): number {
 }
 
 function maskDirections(candidate: ComparisonCandidate): number[] {
-  const edges = candidate.outer.flatMap((point, index) => {
-    const next = candidate.outer[(index + 1) % candidate.outer.length]!
-    const dx = next[0] - point[0], dy = next[1] - point[1]
-    const length = Math.hypot(dx, dy)
-    return length >= 4 ? [{ angle: Math.atan2(dy, dx), length }] : []
-  }).sort((a, b) => b.length - a.length)
+  const edges = candidate.outer
+    .flatMap((point, index) => {
+      const next = candidate.outer[(index + 1) % candidate.outer.length]!
+      const dx = next[0] - point[0],
+        dy = next[1] - point[1]
+      const length = Math.hypot(dx, dy)
+      return length >= 4 ? [{ angle: Math.atan2(dy, dx), length }] : []
+    })
+    .sort((a, b) => b.length - a.length)
   const groups: { angle: number; x: number; y: number; weight: number }[] = []
   for (const edge of edges) {
-    const group = groups.find(g => Math.abs(Math.sin(g.angle - edge.angle)) < 0.08)
+    const group = groups.find((g) => Math.abs(Math.sin(g.angle - edge.angle)) < 0.08)
     if (group) {
       group.x += Math.cos(2 * edge.angle) * edge.length
       group.y += Math.sin(2 * edge.angle) * edge.length
       group.weight += edge.length
       group.angle = Math.atan2(group.y, group.x) / 2
-    } else groups.push({ angle: edge.angle, x: Math.cos(2 * edge.angle) * edge.length, y: Math.sin(2 * edge.angle) * edge.length, weight: edge.length })
+    } else
+      groups.push({
+        angle: edge.angle,
+        x: Math.cos(2 * edge.angle) * edge.length,
+        y: Math.sin(2 * edge.angle) * edge.length,
+        weight: edge.length,
+      })
   }
-  return groups.sort((a, b) => b.weight - a.weight).slice(0, 6).map(g => g.angle)
+  return groups
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 6)
+    .map((g) => g.angle)
 }
 
 /** Exact polygon cross-sections avoid Hough top-N truncation and preserve short returns. */
-function maskStrips(candidate: ComparisonCandidate, angle: number, maxThickness: number, centerDrift = 0.35): PixelWall[] {
-  const ux = Math.cos(angle), uy = Math.sin(angle)
+function maskStrips(
+  candidate: ComparisonCandidate,
+  angle: number,
+  maxThickness: number,
+  centerDrift = 0.35,
+): PixelWall[] {
+  const ux = Math.cos(angle),
+    uy = Math.sin(angle)
   const reference = { start: [0, 0] as PlanPoint, end: [ux, uy] as PlanPoint }
-  const rings = [candidate.outer, ...candidate.holes].map(ring => ring.map(point =>
-    [point[0] * ux + point[1] * uy, -point[0] * uy + point[1] * ux] as PlanPoint))
-  const lower = Math.min(...rings[0]!.map(p => p[0])), upper = Math.max(...rings[0]!.map(p => p[0]))
+  const rings = [candidate.outer, ...candidate.holes].map((ring) =>
+    ring.map(
+      (point) => [point[0] * ux + point[1] * uy, -point[0] * uy + point[1] * ux] as PlanPoint,
+    ),
+  )
+  const lower = Math.min(...rings[0]!.map((p) => p[0])),
+    upper = Math.max(...rings[0]!.map((p) => p[0]))
   const step = Math.max(0.5, (upper - lower) / MAX_ANALYSIS_SIDE)
   type Run = { start: number; end: number; centers: number[]; widths: number[] }
-  const active: Run[] = [], finished: Run[] = []
+  const active: Run[] = [],
+    finished: Run[] = []
   for (let along = lower + step / 2; along < upper; along += step) {
     const cuts: number[] = []
-    for (const ring of rings) for (let i = 0; i < ring.length; i++) {
-      const a = ring[i]!, b = ring[(i + 1) % ring.length]!
-      if ((a[0] > along) === (b[0] > along)) continue
-      cuts.push(a[1] + (along - a[0]) * (b[1] - a[1]) / (b[0] - a[0]))
-    }
+    for (const ring of rings)
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i]!,
+          b = ring[(i + 1) % ring.length]!
+        if (a[0] > along === b[0] > along) continue
+        cuts.push(a[1] + ((along - a[0]) * (b[1] - a[1])) / (b[0] - a[0]))
+      }
     cuts.sort((a, b) => a - b)
     const used = new Set<Run>()
     for (let i = 0; i + 1 < cuts.length; i += 2) {
       const thickness = cuts[i + 1]! - cuts[i]!
       if (thickness < 1.5 || thickness > maxThickness) continue
       const center = (cuts[i + 1]! + cuts[i]!) / 2
-      const run = active.find(r => !used.has(r) &&
-        Math.abs(r.centers[0]! - center) <= Math.max(step * 1.5, Math.min(thickness, r.widths[0]!) * centerDrift) &&
-        along - r.end <= Math.max(step * 2, thickness * 1.2))
+      const run = active.find(
+        (r) =>
+          !used.has(r) &&
+          Math.abs(r.centers[0]! - center) <=
+            Math.max(step * 1.5, Math.min(thickness, r.widths[0]!) * centerDrift) &&
+          along - r.end <= Math.max(step * 2, thickness * 1.2),
+      )
       if (run) {
         run.end = along + step / 2
         run.centers.push(center)
         run.widths.push(thickness)
         used.add(run)
       } else {
-        const next = { start: along - step / 2, end: along + step / 2, centers: [center], widths: [thickness] }
+        const next = {
+          start: along - step / 2,
+          end: along + step / 2,
+          centers: [center],
+          widths: [thickness],
+        }
         active.push(next)
         used.add(next)
       }
@@ -338,22 +376,40 @@ function maskStrips(candidate: ComparisonCandidate, angle: number, maxThickness:
     }
   }
   finished.push(...active)
-  return finished.flatMap(run => {
-    const thickness = median(run.widths), length = run.end - run.start
-    if (length < Math.max(2, thickness * 0.5) || run.centers.length * step / length < 0.6) return []
+  return finished.flatMap((run) => {
+    const thickness = median(run.widths),
+      length = run.end - run.start
+    if (length < Math.max(2, thickness * 0.5) || (run.centers.length * step) / length < 0.6)
+      return []
     const center = median(run.centers)
     let support = 0
     for (let sample = 0; sample < 9; sample++)
-      if (pointInCandidate(wallPoint(reference, run.start + length * (sample + 0.5) / 9, center), candidate)) support++
+      if (
+        pointInCandidate(
+          wallPoint(reference, run.start + (length * (sample + 0.5)) / 9, center),
+          candidate,
+        )
+      )
+        support++
     if (support < 7) return []
-    return [canonicalWall({ start: wallPoint(reference, run.start, center), end: wallPoint(reference, run.end, center),
-      thickness, sourceIds: [candidate.id], derivation: 'retained-wall-mask-paired-face-axis' })]
+    return [
+      canonicalWall({
+        start: wallPoint(reference, run.start, center),
+        end: wallPoint(reference, run.end, center),
+        thickness,
+        sourceIds: [candidate.id],
+        derivation: 'retained-wall-mask-paired-face-axis',
+      }),
+    ]
   })
 }
 
 function extractWalls(candidates: ResolvedCandidate[], width: number, height: number): PixelWall[] {
-  const extracted = candidates.flatMap(({ candidate }) => maskDirections(candidate).flatMap(angle =>
-    maskStrips(candidate, angle, Math.max(12, Math.min(width, height) * 0.08))))
+  const extracted = candidates.flatMap(({ candidate }) =>
+    maskDirections(candidate).flatMap((angle) =>
+      maskStrips(candidate, angle, Math.max(12, Math.min(width, height) * 0.08)),
+    ),
+  )
   extracted.sort((a, b) => lineFrame(b).length - lineFrame(a).length)
   const primary = extracted[0] ? lineFrame(extracted[0]) : null
   const walls: PixelWall[] = []
@@ -361,14 +417,25 @@ function extractWalls(candidates: ResolvedCandidate[], width: number, height: nu
     const f = lineFrame(wall)
     // A bevel on a mask corner is not a separate diagonal wall. Genuine
     // oblique runs remain; short orthogonal returns are never length-filtered.
-    if (primary && f.length < wall.thickness * 1.4 &&
-      Math.abs((primary.ux * f.uy - primary.uy * f.ux) * (primary.ux * f.ux + primary.uy * f.uy)) > 0.1) continue
-    const covered = walls.find(other => {
+    if (
+      primary &&
+      f.length < wall.thickness * 1.4 &&
+      Math.abs((primary.ux * f.uy - primary.uy * f.ux) * (primary.ux * f.ux + primary.uy * f.uy)) >
+        0.1
+    )
+      continue
+    const covered = walls.find((other) => {
       const of = lineFrame(other)
-      return [wall.start, wall.end, wallPoint(wall, f.length / 2)].every(point => {
-        const [along, across] = project(point, other)
-        return along >= -0.5 && along <= of.length + 0.5 && Math.abs(across) <= other.thickness / 2 + 0.5
-      }) && wall.thickness <= Math.max(other.thickness, of.length) + 1
+      return (
+        [wall.start, wall.end, wallPoint(wall, f.length / 2)].every((point) => {
+          const [along, across] = project(point, other)
+          return (
+            along >= -0.5 &&
+            along <= of.length + 0.5 &&
+            Math.abs(across) <= other.thickness / 2 + 0.5
+          )
+        }) && wall.thickness <= Math.max(other.thickness, of.length) + 1
+      )
     })
     if (covered) covered.sourceIds = mergeSourceIds(covered.sourceIds, wall.sourceIds)
     else walls.push(wall)
@@ -408,42 +475,60 @@ function maskMoments(candidate: ComparisonCandidate) {
   }
 }
 
-function fitNarrowOpeningAxis(candidate: ComparisonCandidate, walls: PixelWall[]): OpeningAxis | null {
+function fitNarrowOpeningAxis(
+  candidate: ComparisonCandidate,
+  walls: PixelWall[],
+): OpeningAxis | null {
   const moments = maskMoments(candidate)
   if (!moments) return null
   const angle = Math.atan2(2 * moments.xy, moments.xx - moments.yy) / 2
   const directions = maskDirections(candidate)
-  const nearest = walls.filter(w => {
+  const nearest = walls.filter((w) => {
     const [along, across] = project(moments.mean, w)
-    return along > -40 && along < lineFrame(w).length + 40 && Math.abs(across) < Math.max(20, w.thickness * 3)
+    return (
+      along > -40 &&
+      along < lineFrame(w).length + 40 &&
+      Math.abs(across) < Math.max(20, w.thickness * 3)
+    )
   })
   for (const wall of nearest) {
-    const f = lineFrame(wall), direction = Math.atan2(f.uy, f.ux)
-    if (!directions.some(a => Math.abs(Math.sin(a - direction)) < 0.03)) directions.unshift(direction)
+    const f = lineFrame(wall),
+      direction = Math.atan2(f.uy, f.ux)
+    if (!directions.some((a) => Math.abs(Math.sin(a - direction)) < 0.03))
+      directions.unshift(direction)
   }
-  if (!directions.some(a => Math.abs(Math.sin(a - angle)) < 0.05)) directions.push(angle)
-  let best: PixelWall | undefined, bestScore = 0
+  if (!directions.some((a) => Math.abs(Math.sin(a - angle)) < 0.05)) directions.push(angle)
+  let best: PixelWall | undefined,
+    bestScore = 0
   for (const direction of directions) {
     const strips = maskStrips(candidate, direction, 60, 0.8)
     regularizeWalls(strips)
     for (const strip of strips) {
-    const length = lineFrame(strip).length
-    if (length < 3 || length / strip.thickness < 2) continue
-    const aligned = nearest.some(wall => { const f = lineFrame(wall); return Math.abs(f.ux * Math.cos(direction) + f.uy * Math.sin(direction)) > 0.995 })
-    const score = length * length * Math.min(strip.thickness, length / 4) * (aligned ? 3 : 1)
-    if (score > bestScore) { best = strip; bestScore = score }
-  }
+      const length = lineFrame(strip).length
+      if (length < 3 || length / strip.thickness < 2) continue
+      const aligned = nearest.some((wall) => {
+        const f = lineFrame(wall)
+        return Math.abs(f.ux * Math.cos(direction) + f.uy * Math.sin(direction)) > 0.995
+      })
+      const score = length * length * Math.min(strip.thickness, length / 4) * (aligned ? 3 : 1)
+      if (score > bestScore) {
+        best = strip
+        bestScore = score
+      }
+    }
   }
   if (best) {
     // A stepped frame is one aperture, not only its thickest fragment.
     // Keep the dominant rail direction and span the entire observed frame.
-    const projections = candidate.outer.map(point => project(point, best!)[0])
+    const projections = candidate.outer.map((point) => project(point, best!)[0])
     const start = wallPoint(best, Math.min(...projections))
     const end = wallPoint(best, Math.max(...projections))
     best.start = start
     best.end = end
   }
-  return best ? { start: best.start, end: best.end, thickness: best.thickness, method: 'mask-wall-strip' } : null
+  return best
+    ? { start: best.start, end: best.end, thickness: best.thickness, method: 'mask-wall-strip' }
+    : null
 }
 
 function openingInterval(
@@ -484,29 +569,50 @@ function sourcePixelIsInk(
   return luminance <= 200
 }
 
-function recoverWindowFromSource(region: [number, number, number, number], walls: PixelWall[],
-  source: { width: number; height: number; rgba: Uint8Array }): OpeningAxis | null {
+function recoverWindowFromSource(
+  region: [number, number, number, number],
+  walls: PixelWall[],
+  source: { width: number; height: number; rgba: Uint8Array },
+): OpeningAxis | null {
   const [x0, y0, x1, y1] = region
   const center: PlanPoint = [(x0 + x1) / 2, (y0 + y1) / 2]
-  let best: OpeningAxis | null = null, bestScore = 0
+  let best: OpeningAxis | null = null,
+    bestScore = 0
   for (const wall of walls) {
-    const [alongCenter, acrossCenter] = project(center, wall), frame = lineFrame(wall)
-    if (Math.abs(acrossCenter) > Math.max(x1 - x0, y1 - y0) / 2 + wall.thickness ||
-      alongCenter < -30 || alongCenter > frame.length + 30) continue
-    const corners: PlanPoint[] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-    const projections = corners.map(p => project(p, wall)[0])
-    const lower = Math.min(...projections), upper = Math.max(...projections)
+    const [alongCenter, acrossCenter] = project(center, wall),
+      frame = lineFrame(wall)
+    if (
+      Math.abs(acrossCenter) > Math.max(x1 - x0, y1 - y0) / 2 + wall.thickness ||
+      alongCenter < -30 ||
+      alongCenter > frame.length + 30
+    )
+      continue
+    const corners: PlanPoint[] = [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ]
+    const projections = corners.map((p) => project(p, wall)[0])
+    const lower = Math.min(...projections),
+      upper = Math.max(...projections)
     if (upper - lower < wall.thickness * 1.5) continue
-    for (const shift of [-.5, 0, .5]) {
-      let start = -1, last = -1, hits = 0
+    for (const shift of [-0.5, 0, 0.5]) {
+      let start = -1,
+        last = -1,
+        hits = 0
       const finish = () => {
         const length = last - start + 1
-        if (start < 0 || length < 12 || hits / length < .55) return
+        if (start < 0 || length < 12 || hits / length < 0.55) return
         const score = hits * length
         if (score > bestScore) {
           bestScore = score
-          best = { start: wallPoint(wall, start, shift * wall.thickness),
-            end: wallPoint(wall, last + 1, shift * wall.thickness), thickness: wall.thickness, method: 'mask-wall-strip' }
+          best = {
+            start: wallPoint(wall, start, shift * wall.thickness),
+            end: wallPoint(wall, last + 1, shift * wall.thickness),
+            thickness: wall.thickness,
+            method: 'mask-wall-strip',
+          }
         }
       }
       for (let along = Math.ceil(lower); along <= upper + 4; along++) {
@@ -516,11 +622,22 @@ function recoverWindowFromSource(region: [number, number, number, number], walls
             const p = wallPoint(wall, along, (shift + (i - 5) / 5) * wall.thickness)
             return sourcePixelIsInk(source, p[0], p[1])
           })
-          const first = samples.indexOf(true), lastInk = samples.lastIndexOf(true)
-          signal = first >= 0 && lastInk - first >= 4 && samples.slice(first, lastInk + 1).filter(v => !v).length >= 2
+          const first = samples.indexOf(true),
+            lastInk = samples.lastIndexOf(true)
+          signal =
+            first >= 0 &&
+            lastInk - first >= 4 &&
+            samples.slice(first, lastInk + 1).filter((v) => !v).length >= 2
         }
-        if (signal) { if (start < 0) start = along; last = along; hits++ }
-        else if (start >= 0 && along - last > 3) { finish(); start = -1; hits = 0 }
+        if (signal) {
+          if (start < 0) start = along
+          last = along
+          hits++
+        } else if (start >= 0 && along - last > 3) {
+          finish()
+          start = -1
+          hits = 0
+        }
       }
       finish()
     }
@@ -528,38 +645,87 @@ function recoverWindowFromSource(region: [number, number, number, number], walls
   return best
 }
 
-function recoverPierFromSource(id: string, region: [number, number, number, number],
-  source: { width: number; height: number; rgba: Uint8Array }): ComparisonCandidate | null {
+function recoverPierFromSource(
+  id: string,
+  region: [number, number, number, number],
+  source: { width: number; height: number; rgba: Uint8Array },
+): ComparisonCandidate | null {
   const [left, top, right, bottom] = region
-  const width = Math.ceil(right) - Math.floor(left) + 1, height = Math.ceil(bottom) - Math.floor(top) + 1
+  const width = Math.ceil(right) - Math.floor(left) + 1,
+    height = Math.ceil(bottom) - Math.floor(top) + 1
   if (width * height > 100_000) return null
   const seen = new Uint8Array(width * height)
   let best: { x0: number; y0: number; x1: number; y1: number; count: number } | null = null
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const start = y * width + x
-    if (seen[start] || !sourcePixelIsInk(source, Math.floor(left) + x, Math.floor(top) + y)) continue
-    const queue = [start], component = { x0: x, y0: y, x1: x, y1: y, count: 0 }
-    seen[start] = 1
-    for (let cursor = 0; cursor < queue.length; cursor++) {
-      const at = queue[cursor]!, px = at % width, py = Math.floor(at / width)
-      component.x0 = Math.min(component.x0, px); component.x1 = Math.max(component.x1, px)
-      component.y0 = Math.min(component.y0, py); component.y1 = Math.max(component.y1, py); component.count++
-      for (const [nx, ny] of [[px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1]]) {
-        if (nx! < 0 || ny! < 0 || nx! >= width || ny! >= height) continue
-        const next = ny! * width + nx!
-        if (!seen[next] && sourcePixelIsInk(source, Math.floor(left) + nx!, Math.floor(top) + ny!)) { seen[next] = 1; queue.push(next) }
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const start = y * width + x
+      if (seen[start] || !sourcePixelIsInk(source, Math.floor(left) + x, Math.floor(top) + y))
+        continue
+      const queue = [start],
+        component = { x0: x, y0: y, x1: x, y1: y, count: 0 }
+      seen[start] = 1
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        const at = queue[cursor]!,
+          px = at % width,
+          py = Math.floor(at / width)
+        component.x0 = Math.min(component.x0, px)
+        component.x1 = Math.max(component.x1, px)
+        component.y0 = Math.min(component.y0, py)
+        component.y1 = Math.max(component.y1, py)
+        component.count++
+        for (const [nx, ny] of [
+          [px - 1, py],
+          [px + 1, py],
+          [px, py - 1],
+          [px, py + 1],
+        ]) {
+          if (nx! < 0 || ny! < 0 || nx! >= width || ny! >= height) continue
+          const next = ny! * width + nx!
+          if (
+            !seen[next] &&
+            sourcePixelIsInk(source, Math.floor(left) + nx!, Math.floor(top) + ny!)
+          ) {
+            seen[next] = 1
+            queue.push(next)
+          }
+        }
       }
+      const w = component.x1 - component.x0 + 1,
+        h = component.y1 - component.y0 + 1
+      if (
+        w >= 4 &&
+        h >= 4 &&
+        w / h > 0.5 &&
+        w / h < 2 &&
+        component.count / (w * h) > 0.75 &&
+        (!best || component.count > best.count)
+      )
+        best = component
     }
-    const w = component.x1 - component.x0 + 1, h = component.y1 - component.y0 + 1
-    if (w >= 4 && h >= 4 && w / h > .5 && w / h < 2 && component.count / (w * h) > .75 &&
-      (!best || component.count > best.count)) best = component
-  }
   if (!best) return null
-  const x0 = Math.floor(left) + best.x0, x1 = Math.floor(left) + best.x1 + 1
-  const y0 = Math.floor(top) + best.y0, y1 = Math.floor(top) + best.y1 + 1
-  return { id, class: 'wall', holes: [], outer: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
-    decision: { id, action: 'needs_repair', correctedClass: 'wall', confidence: 'medium',
-      evidence: 'Solid compact pier recovered from connected source ink inside the reviewer region; height remains assumed.' } }
+  const x0 = Math.floor(left) + best.x0,
+    x1 = Math.floor(left) + best.x1 + 1
+  const y0 = Math.floor(top) + best.y0,
+    y1 = Math.floor(top) + best.y1 + 1
+  return {
+    id,
+    class: 'wall',
+    holes: [],
+    outer: [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ],
+    decision: {
+      id,
+      action: 'needs_repair',
+      correctedClass: 'wall',
+      confidence: 'medium',
+      evidence:
+        'Solid compact pier recovered from connected source ink inside the reviewer region; height remains assumed.',
+    },
+  }
 }
 
 function findJambAnchor(
@@ -700,11 +866,12 @@ function regularizeWalls(walls: PixelWall[]): void {
   if (!walls.length) return
   const groups: { x: number; y: number; angle: number }[] = []
   const groupOf = new Map<PixelWall, number>()
-  const angleDelta = (a: number, b: number) => Math.atan2(Math.sin(2 * (a - b)), Math.cos(2 * (a - b))) / 2
+  const angleDelta = (a: number, b: number) =>
+    Math.atan2(Math.sin(2 * (a - b)), Math.cos(2 * (a - b))) / 2
   for (const wall of [...walls].sort((a, b) => lineFrame(b).length - lineFrame(a).length)) {
     const f = lineFrame(wall)
     const angle = Math.atan2(f.uy, f.ux)
-    let index = groups.findIndex(group => Math.abs(angleDelta(angle, group.angle)) < Math.PI / 30)
+    let index = groups.findIndex((group) => Math.abs(angleDelta(angle, group.angle)) < Math.PI / 30)
     if (index < 0) {
       index = groups.length
       groups.push({ x: 0, y: 0, angle })
@@ -716,18 +883,21 @@ function regularizeWalls(walls: PixelWall[]): void {
     groupOf.set(wall, index)
   }
   // Average nearly orthogonal families together without forcing genuinely angled walls.
-  for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) {
-    const a = groups[i]!, b = groups[j]!
-    if (Math.abs(Math.abs(angleDelta(a.angle, b.angle)) - Math.PI / 2) > Math.PI / 30) continue
-    a.angle = Math.atan2(a.y - b.y, a.x - b.x) / 2
-    b.angle = a.angle + Math.PI / 2
-  }
+  for (let i = 0; i < groups.length; i++)
+    for (let j = i + 1; j < groups.length; j++) {
+      const a = groups[i]!,
+        b = groups[j]!
+      if (Math.abs(Math.abs(angleDelta(a.angle, b.angle)) - Math.PI / 2) > Math.PI / 30) continue
+      a.angle = Math.atan2(a.y - b.y, a.x - b.x) / 2
+      b.angle = a.angle + Math.PI / 2
+    }
   for (const wall of walls) {
     const angle = groups[groupOf.get(wall)!]!.angle
     const f = lineFrame(wall)
     const cx = (wall.start[0] + wall.end[0]) / 2
     const cy = (wall.start[1] + wall.end[1]) / 2
-    const dx = Math.cos(angle) * f.length / 2, dy = Math.sin(angle) * f.length / 2
+    const dx = (Math.cos(angle) * f.length) / 2,
+      dy = (Math.sin(angle) * f.length) / 2
     wall.start = [cx - dx, cy - dy]
     wall.end = [cx + dx, cy + dy]
     Object.assign(wall, canonicalWall(wall))
@@ -736,86 +906,150 @@ function regularizeWalls(walls: PixelWall[]): void {
   // One centreline for near-collinear runs, even across an opening. This aligns
   // fragments without inventing material in the gap between them.
   for (let index = 0; index < groups.length; index++) {
-    const angle = groups[index]!.angle, nx = -Math.sin(angle), ny = Math.cos(angle)
+    const angle = groups[index]!.angle,
+      nx = -Math.sin(angle),
+      ny = Math.cos(angle)
     const offsets: { rho: number; weight: number; thickness: number; members: PixelWall[] }[] = []
-    for (const wall of walls.filter(w => groupOf.get(w) === index).sort((a, b) => lineFrame(b).length - lineFrame(a).length)) {
+    for (const wall of walls
+      .filter((w) => groupOf.get(w) === index)
+      .sort((a, b) => lineFrame(b).length - lineFrame(a).length)) {
       const rho = ((wall.start[0] + wall.end[0]) * nx + (wall.start[1] + wall.end[1]) * ny) / 2
       const weight = lineFrame(wall).length
-      const group = offsets.find(g => Math.abs(g.rho - rho) <= Math.max(2, Math.min(g.thickness, wall.thickness) * 0.6))
+      const group = offsets.find(
+        (g) => Math.abs(g.rho - rho) <= Math.max(2, Math.min(g.thickness, wall.thickness) * 0.6),
+      )
       if (group) {
         group.rho = (group.rho * group.weight + rho * weight) / (group.weight + weight)
         group.weight += weight
         group.members.push(wall)
       } else offsets.push({ rho, weight, thickness: wall.thickness, members: [wall] })
     }
-    for (const group of offsets) for (const wall of group.members) {
-      const delta = group.rho - (wall.start[0] * nx + wall.start[1] * ny)
-      wall.start = [wall.start[0] + nx * delta, wall.start[1] + ny * delta]
-      wall.end = [wall.end[0] + nx * delta, wall.end[1] + ny * delta]
+    for (const group of offsets)
+      for (const wall of group.members) {
+        const delta = group.rho - (wall.start[0] * nx + wall.start[1] * ny)
+        wall.start = [wall.start[0] + nx * delta, wall.start[1] + ny * delta]
+        wall.end = [wall.end[0] + nx * delta, wall.end[1] + ny * delta]
+      }
+  }
+  for (let i = 0; i < walls.length; i++)
+    for (let j = i + 1; j < walls.length; j++) {
+      const a = walls[i]!,
+        b = walls[j]!,
+        af = lineFrame(a),
+        bf = lineFrame(b)
+      if (Math.abs(af.ux * bf.ux + af.uy * bf.uy) < COLLINEAR_COSINE) continue
+      const [bs, bo] = project(b.start, a),
+        [be, eo] = project(b.end, a)
+      const low = Math.min(bs, be),
+        high = Math.max(bs, be)
+      const tolerance = Math.max(1.5, Math.min(a.thickness, b.thickness) * 0.65)
+      if (
+        Math.max(Math.abs(bo), Math.abs(eo)) > tolerance ||
+        low > af.length + tolerance ||
+        high < -tolerance
+      )
+        continue
+      const offset = (((bo + eo) / 2) * bf.length) / (af.length + bf.length)
+      const start = wallPoint(a, Math.min(0, low), offset)
+      const end = wallPoint(a, Math.max(af.length, high), offset)
+      a.thickness = (a.thickness * af.length + b.thickness * bf.length) / (af.length + bf.length)
+      a.start = start
+      a.end = end
+      a.sourceIds = mergeSourceIds(a.sourceIds, b.sourceIds)
+      if (a.derivation !== b.derivation) a.derivation = 'opening-mask-jamb-bridge'
+      walls.splice(j--, 1)
     }
-  }
-  for (let i = 0; i < walls.length; i++) for (let j = i + 1; j < walls.length; j++) {
-    const a = walls[i]!, b = walls[j]!, af = lineFrame(a), bf = lineFrame(b)
-    if (Math.abs(af.ux * bf.ux + af.uy * bf.uy) < COLLINEAR_COSINE) continue
-    const [bs, bo] = project(b.start, a), [be, eo] = project(b.end, a)
-    const low = Math.min(bs, be), high = Math.max(bs, be)
-    const tolerance = Math.max(1.5, Math.min(a.thickness, b.thickness) * 0.65)
-    if (Math.max(Math.abs(bo), Math.abs(eo)) > tolerance ||
-      low > af.length + tolerance || high < -tolerance) continue
-    const offset = ((bo + eo) / 2) * bf.length / (af.length + bf.length)
-    const start = wallPoint(a, Math.min(0, low), offset)
-    const end = wallPoint(a, Math.max(af.length, high), offset)
-    a.thickness = (a.thickness * af.length + b.thickness * bf.length) / (af.length + bf.length)
-    a.start = start
-    a.end = end
-    a.sourceIds = mergeSourceIds(a.sourceIds, b.sourceIds)
-    if (a.derivation !== b.derivation) a.derivation = 'opening-mask-jamb-bridge'
-    walls.splice(j--, 1)
-  }
   // Extend short corner/T-junction gaps to the actual intersection of fitted axes.
-  for (let pass = 0; pass < 2; pass++) for (let i = 0; i < walls.length; i++) for (let j = i + 1; j < walls.length; j++) {
-    const a = walls[i]!, b = walls[j]!, af = lineFrame(a), bf = lineFrame(b)
-    const cross = af.ux * bf.uy - af.uy * bf.ux
-    if (Math.abs(cross) < 0.2) continue
-    const dx = b.start[0] - a.start[0], dy = b.start[1] - a.start[1]
-    const t = (dx * bf.uy - dy * bf.ux) / cross
-    const u = (dx * af.uy - dy * af.ux) / cross
-    const tolerance = Math.max(3, (a.thickness + b.thickness) * 0.8)
-    if (t < -tolerance || t > af.length + tolerance || u < -tolerance || u > bf.length + tolerance) continue
-    const point = wallPoint(a, t)
-    for (const [wall, along, length] of [[a, t, af.length], [b, u, bf.length]] as const) {
-      const startDistance = Math.abs(along), endDistance = Math.abs(along - length)
-      if (startDistance < endDistance && startDistance < tolerance &&
-        Math.hypot(point[0] - wall.end[0], point[1] - wall.end[1]) >= Math.max(0.5, length * 0.35)) wall.start = point
-      else if (endDistance <= startDistance && endDistance < tolerance &&
-        Math.hypot(point[0] - wall.start[0], point[1] - wall.start[1]) >= Math.max(0.5, length * 0.35)) wall.end = point
-    }
-  }
+  for (let pass = 0; pass < 2; pass++)
+    for (let i = 0; i < walls.length; i++)
+      for (let j = i + 1; j < walls.length; j++) {
+        const a = walls[i]!,
+          b = walls[j]!,
+          af = lineFrame(a),
+          bf = lineFrame(b)
+        const cross = af.ux * bf.uy - af.uy * bf.ux
+        if (Math.abs(cross) < 0.2) continue
+        const dx = b.start[0] - a.start[0],
+          dy = b.start[1] - a.start[1]
+        const t = (dx * bf.uy - dy * bf.ux) / cross
+        const u = (dx * af.uy - dy * af.ux) / cross
+        const tolerance = Math.max(3, (a.thickness + b.thickness) * 0.8)
+        if (
+          t < -tolerance ||
+          t > af.length + tolerance ||
+          u < -tolerance ||
+          u > bf.length + tolerance
+        )
+          continue
+        const point = wallPoint(a, t)
+        for (const [wall, along, length] of [
+          [a, t, af.length],
+          [b, u, bf.length],
+        ] as const) {
+          const startDistance = Math.abs(along),
+            endDistance = Math.abs(along - length)
+          if (
+            startDistance < endDistance &&
+            startDistance < tolerance &&
+            Math.hypot(point[0] - wall.end[0], point[1] - wall.end[1]) >=
+              Math.max(0.5, length * 0.35)
+          )
+            wall.start = point
+          else if (
+            endDistance <= startDistance &&
+            endDistance < tolerance &&
+            Math.hypot(point[0] - wall.start[0], point[1] - wall.start[1]) >=
+              Math.max(0.5, length * 0.35)
+          )
+            wall.end = point
+        }
+      }
 }
 
-function inferDoorOrientation(axis: OpeningAxis, source: { width: number; height: number; rgba: Uint8Array }) {
+function inferDoorOrientation(
+  axis: OpeningAxis,
+  source: { width: number; height: number; rgba: Uint8Array },
+) {
   const f = lineFrame(axis)
-  const scores: { hingesSide: 'left' | 'right'; swingDirection: 'inward' | 'outward'; score: number }[] = []
+  const scores: {
+    hingesSide: 'left' | 'right'
+    swingDirection: 'inward' | 'outward'
+    score: number
+  }[] = []
   const inkNear = (point: PlanPoint) => {
-    for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++)
-      if (sourcePixelIsInk(source, point[0] + x, point[1] + y)) return 1
+    for (let y = -1; y <= 1; y++)
+      for (let x = -1; x <= 1; x++)
+        if (sourcePixelIsInk(source, point[0] + x, point[1] + y)) return 1
     return 0
   }
-  for (const hinge of [0, 1]) for (const side of [-1, 1]) {
-    let score = 0
-    for (let i = 0; i < 24; i++) {
-      const angle = (0.13 + 0.74 * (i + 0.5) / 24) * Math.PI / 2
-      const along = hinge ? f.length * (1 - Math.cos(angle)) : f.length * Math.cos(angle)
-      const across = side * f.length * Math.sin(angle)
-      score += inkNear(wallPoint(axis, along, across))
+  for (const hinge of [0, 1])
+    for (const side of [-1, 1]) {
+      let score = 0
+      for (let i = 0; i < 24; i++) {
+        const angle = ((0.13 + (0.74 * (i + 0.5)) / 24) * Math.PI) / 2
+        const along = hinge ? f.length * (1 - Math.cos(angle)) : f.length * Math.cos(angle)
+        const across = side * f.length * Math.sin(angle)
+        score += inkNear(wallPoint(axis, along, across))
+      }
+      scores.push({
+        hingesSide: hinge ? 'right' : 'left',
+        swingDirection: side > 0 ? 'inward' : 'outward',
+        score: score / 24,
+      })
     }
-    scores.push({ hingesSide: hinge ? 'right' : 'left', swingDirection: side > 0 ? 'inward' : 'outward', score: score / 24 })
-  }
   scores.sort((a, b) => b.score - a.score)
   const best = scores[0]!
   if (best.score < 0.45 || best.score - scores[1]!.score < 0.12)
-    return { hingesSide: 'left' as const, swingDirection: 'inward' as const, orientationEvidence: 'unresolved-default' as const }
-  return { hingesSide: best.hingesSide, swingDirection: best.swingDirection, orientationEvidence: 'source-arc' as const }
+    return {
+      hingesSide: 'left' as const,
+      swingDirection: 'inward' as const,
+      orientationEvidence: 'unresolved-default' as const,
+    }
+  return {
+    hingesSide: best.hingesSide,
+    swingDirection: best.swingDirection,
+    orientationEvidence: 'source-arc' as const,
+  }
 }
 
 function chooseOpeningHost(
@@ -827,10 +1061,14 @@ function chooseOpeningHost(
     if (!evidence) return []
     const frame = lineFrame(wall)
     const tolerance = Math.max(2, wall.thickness, axis.thickness)
-    if (evidence.interval[0] < -tolerance || evidence.interval[1] > frame.length + tolerance) return []
-    const interval: Interval = [Math.max(0, evidence.interval[0]), Math.min(frame.length, evidence.interval[1])]
+    if (evidence.interval[0] < -tolerance || evidence.interval[1] > frame.length + tolerance)
+      return []
+    const interval: Interval = [
+      Math.max(0, evidence.interval[0]),
+      Math.min(frame.length, evidence.interval[1]),
+    ]
     const width = interval[1] - interval[0]
-    if (width < 2 || width < (evidence.interval[1] - evidence.interval[0]) * .7) return []
+    if (width < 2 || width < (evidence.interval[1] - evidence.interval[0]) * 0.7) return []
     const fitMargin = Math.min(interval[0], frame.length - interval[1])
     return [{ wall, interval, method: evidence.method, fitMargin }]
   })
@@ -918,7 +1156,13 @@ function addUnresolved(
 
 export async function buildNativeMaskPreview(
   variant: ComparisonVariant,
-  source: { width: number; height: number; rgba: Uint8Array; labels?: SourceLabel[]; issues?: string[] },
+  source: {
+    width: number
+    height: number
+    rgba: Uint8Array
+    labels?: SourceLabel[]
+    issues?: string[]
+  },
   options: NativePreviewOptions,
 ): Promise<NativeMaskPreview> {
   if (!variant?.id?.trim()) throw new Error('Native mask preview requires a variant with an ID.')
@@ -980,28 +1224,54 @@ export async function buildNativeMaskPreview(
   regularizeWalls(pixelWalls)
   variant.missingFeatures.forEach((proposal, index) => {
     if (proposal.kind !== 'wall') return
-    const candidate = recoverPierFromSource(`missing:${index + 1}:wall`, proposal.sourceRegion, source)
+    const candidate = recoverPierFromSource(
+      `missing:${index + 1}:wall`,
+      proposal.sourceRegion,
+      source,
+    )
     if (!candidate) return
     const entry: ResolvedCandidate = { candidate, structuralClass: 'wall' }
-    resolved.push(entry); wallCandidates.push(entry)
+    resolved.push(entry)
+    wallCandidates.push(entry)
     pixelWalls.push(...extractWalls([entry], source.width, source.height))
   })
   variant.missingFeatures.forEach((proposal, index) => {
     if (proposal.kind !== 'window') return
     const [x0, y0, x1, y1] = proposal.sourceRegion
-    if (openingCandidates.some(({ candidate, structuralClass }) => structuralClass === 'window' &&
-      candidate.outer.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1))) return
+    if (
+      openingCandidates.some(
+        ({ candidate, structuralClass }) =>
+          structuralClass === 'window' &&
+          candidate.outer.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1),
+      )
+    )
+      return
     const axis = recoverWindowFromSource(proposal.sourceRegion, pixelWalls, source)
     if (!axis) return
     const length = lineFrame(axis).length
     const id = `missing:${index + 1}:window`
-    const candidate: ComparisonCandidate = { id, class: 'window', holes: [],
-      outer: [wallPoint(axis, 0, -axis.thickness / 2), wallPoint(axis, length, -axis.thickness / 2),
-        wallPoint(axis, length, axis.thickness / 2), wallPoint(axis, 0, axis.thickness / 2)],
-      decision: { id, action: 'needs_repair', correctedClass: 'window', confidence: 'medium',
-        evidence: 'Recovered parallel frame strokes inside the review region on a reconstructed wall; aperture dimensions remain approximate.' } }
+    const candidate: ComparisonCandidate = {
+      id,
+      class: 'window',
+      holes: [],
+      outer: [
+        wallPoint(axis, 0, -axis.thickness / 2),
+        wallPoint(axis, length, -axis.thickness / 2),
+        wallPoint(axis, length, axis.thickness / 2),
+        wallPoint(axis, 0, axis.thickness / 2),
+      ],
+      decision: {
+        id,
+        action: 'needs_repair',
+        correctedClass: 'window',
+        confidence: 'medium',
+        evidence:
+          'Recovered parallel frame strokes inside the review region on a reconstructed wall; aperture dimensions remain approximate.',
+      },
+    }
     const entry: ResolvedCandidate = { candidate, structuralClass: 'window' }
-    openingCandidates.push(entry); resolved.push(entry)
+    openingCandidates.push(entry)
+    resolved.push(entry)
   })
   const recoveredReturns: ResolvedCandidate[] = []
   const sourceParents = new Map<string, string>()
@@ -1014,32 +1284,62 @@ export async function buildNativeMaskPreview(
     const af = lineFrame(axis)
     for (const angle of maskDirections(candidate)) {
       if (Math.abs(Math.cos(angle) * af.ux + Math.sin(angle) * af.uy) > 0.25) continue
-      for (const branch of maskStrips(candidate, angle, Math.max(12, Math.min(source.width, source.height) * 0.08))) {
+      for (const branch of maskStrips(
+        candidate,
+        angle,
+        Math.max(12, Math.min(source.width, source.height) * 0.08),
+      )) {
         if (lineFrame(branch).length < Math.max(5, axis.thickness * 2)) continue
-        const meetsEnd = [branch.start, branch.end].some(point =>
-          [axis.start, axis.end].some(end => Math.hypot(point[0] - end[0], point[1] - end[1]) <= Math.max(3, axis.thickness * 1.5)))
+        const meetsEnd = [branch.start, branch.end].some((point) =>
+          [axis.start, axis.end].some(
+            (end) =>
+              Math.hypot(point[0] - end[0], point[1] - end[1]) <= Math.max(3, axis.thickness * 1.5),
+          ),
+        )
         if (!meetsEnd) continue
         branch.derivation = 'opening-implied-host'
         pixelWalls.push(branch)
         const bf = lineFrame(branch)
-        const corners = [wallPoint(branch, 0, -branch.thickness / 2), wallPoint(branch, bf.length, -branch.thickness / 2),
-          wallPoint(branch, bf.length, branch.thickness / 2), wallPoint(branch, 0, branch.thickness / 2)]
+        const corners = [
+          wallPoint(branch, 0, -branch.thickness / 2),
+          wallPoint(branch, bf.length, -branch.thickness / 2),
+          wallPoint(branch, bf.length, branch.thickness / 2),
+          wallPoint(branch, 0, branch.thickness / 2),
+        ]
         const region: [number, number, number, number] = [
-          Math.min(...corners.map(p => p[0])), Math.min(...corners.map(p => p[1])),
-          Math.max(...corners.map(p => p[0])), Math.max(...corners.map(p => p[1])),
+          Math.min(...corners.map((p) => p[0])),
+          Math.min(...corners.map((p) => p[1])),
+          Math.max(...corners.map((p) => p[0])),
+          Math.max(...corners.map((p) => p[1])),
         ]
         const frame = recoverWindowFromSource(region, [branch], source)
         if (!frame) continue
-        const length = lineFrame(frame).length, id = `${candidate.id}:return:${recoveredReturns.length + 1}`
+        const length = lineFrame(frame).length,
+          id = `${candidate.id}:return:${recoveredReturns.length + 1}`
         sourceParents.set(id, candidate.id)
         openingAxes.set(id, frame)
-        recoveredReturns.push({ structuralClass: 'window', candidate: {
-          id, class: 'window', holes: [], outer: [
-            wallPoint(frame, 0, -frame.thickness / 2), wallPoint(frame, length, -frame.thickness / 2),
-            wallPoint(frame, length, frame.thickness / 2), wallPoint(frame, 0, frame.thickness / 2),
-          ], decision: { id, action: 'needs_repair', correctedClass: 'window', confidence: 'medium',
-            evidence: 'A second frame run is supported by parallel source strokes on the attached return of the original window mask.' },
-        } })
+        recoveredReturns.push({
+          structuralClass: 'window',
+          candidate: {
+            id,
+            class: 'window',
+            holes: [],
+            outer: [
+              wallPoint(frame, 0, -frame.thickness / 2),
+              wallPoint(frame, length, -frame.thickness / 2),
+              wallPoint(frame, length, frame.thickness / 2),
+              wallPoint(frame, 0, frame.thickness / 2),
+            ],
+            decision: {
+              id,
+              action: 'needs_repair',
+              correctedClass: 'window',
+              confidence: 'medium',
+              evidence:
+                'A second frame run is supported by parallel source strokes on the attached return of the original window mask.',
+            },
+          },
+        })
       }
     }
   }
@@ -1049,7 +1349,8 @@ export async function buildNativeMaskPreview(
 
   const acceptedWallMasks = wallCandidates.map(({ candidate }) => candidate)
   const supportedOpenings = openingCandidates.flatMap((entry) => {
-    const axis = openingAxes.get(entry.candidate.id) ?? fitNarrowOpeningAxis(entry.candidate, pixelWalls)
+    const axis =
+      openingAxes.get(entry.candidate.id) ?? fitNarrowOpeningAxis(entry.candidate, pixelWalls)
     if (!axis) return []
     const observedJambs = findOpeningJambs(axis, acceptedWallMasks, source)
     const jambs = observedJambs ?? {
@@ -1076,36 +1377,64 @@ export async function buildNativeMaskPreview(
       pixelWalls.push(jambWall)
     }
   }
-  for (let i = 0; i < supportedOpenings.length; i++) for (let j = i + 1; j < supportedOpenings.length; j++) {
-    const a = supportedOpenings[i]!, b = supportedOpenings[j]!, af = lineFrame(a.axis), bf = lineFrame(b.axis)
-    if (Math.abs(af.ux * bf.ux + af.uy * bf.uy) < OPENING_COSINE) continue
-    const [start, startOffset] = project(b.axis.start, a.axis), [end, endOffset] = project(b.axis.end, a.axis)
-    const thickness = Math.max(a.axis.thickness, b.axis.thickness)
-    if (Math.max(Math.abs(startOffset), Math.abs(endOffset)) > Math.max(2, thickness * .75)) continue
-    const low = Math.min(start, end), high = Math.max(start, end)
-    const gap: Interval | null = low > af.length ? [af.length, low] : high < 0 ? [high, 0] : null
-    if (!gap || gap[1] - gap[0] > Math.max(6, Math.min(thickness * 4, Math.min(af.length, bf.length) * .65))) continue
-    pixelWalls.push(canonicalWall({
-      start: wallPoint(a.axis, gap[0] - thickness / 2), end: wallPoint(a.axis, gap[1] + thickness / 2),
-      thickness, sourceIds: [a.candidate.id, b.candidate.id], derivation: 'opening-implied-host',
-    }))
-  }
+  for (let i = 0; i < supportedOpenings.length; i++)
+    for (let j = i + 1; j < supportedOpenings.length; j++) {
+      const a = supportedOpenings[i]!,
+        b = supportedOpenings[j]!,
+        af = lineFrame(a.axis),
+        bf = lineFrame(b.axis)
+      if (Math.abs(af.ux * bf.ux + af.uy * bf.uy) < OPENING_COSINE) continue
+      const [start, startOffset] = project(b.axis.start, a.axis),
+        [end, endOffset] = project(b.axis.end, a.axis)
+      const thickness = Math.max(a.axis.thickness, b.axis.thickness)
+      if (Math.max(Math.abs(startOffset), Math.abs(endOffset)) > Math.max(2, thickness * 0.75))
+        continue
+      const low = Math.min(start, end),
+        high = Math.max(start, end)
+      const gap: Interval | null = low > af.length ? [af.length, low] : high < 0 ? [high, 0] : null
+      if (
+        !gap ||
+        gap[1] - gap[0] >
+          Math.max(6, Math.min(thickness * 4, Math.min(af.length, bf.length) * 0.65))
+      )
+        continue
+      pixelWalls.push(
+        canonicalWall({
+          start: wallPoint(a.axis, gap[0] - thickness / 2),
+          end: wallPoint(a.axis, gap[1] + thickness / 2),
+          thickness,
+          sourceIds: [a.candidate.id, b.candidate.id],
+          derivation: 'opening-implied-host',
+        }),
+      )
+    }
   // Window-frame fragments mislabelled as small angled walls must not plug the aperture.
   for (let index = pixelWalls.length - 1; index >= 0; index--) {
-    const wall = pixelWalls[index]!, wf = lineFrame(wall)
-    if (supportedOpenings.some(({ structuralClass, axis }) => {
-      if (structuralClass !== 'window') return false
-      const af = lineFrame(axis)
-      if (Math.abs(wf.ux * af.ux + wf.uy * af.uy) > OPENING_COSINE || wf.length > af.length) return false
-      const middle = project(wallPoint(wall, wf.length / 2), axis)
-      const margin = Math.min(axis.thickness, af.length * .2)
-      return middle[0] > margin && middle[0] < af.length - margin &&
-        [wall.start, wall.end].every(point => {
-          const [along, across] = project(point, axis)
-          return along >= -axis.thickness && along <= af.length + axis.thickness &&
-            Math.abs(across) <= (axis.thickness + wall.thickness) / 2
-        })
-    })) pixelWalls.splice(index, 1)
+    const wall = pixelWalls[index]!,
+      wf = lineFrame(wall)
+    if (
+      supportedOpenings.some(({ structuralClass, axis }) => {
+        if (structuralClass !== 'window') return false
+        const af = lineFrame(axis)
+        if (Math.abs(wf.ux * af.ux + wf.uy * af.uy) > OPENING_COSINE || wf.length > af.length)
+          return false
+        const middle = project(wallPoint(wall, wf.length / 2), axis)
+        const margin = Math.min(axis.thickness, af.length * 0.2)
+        return (
+          middle[0] > margin &&
+          middle[0] < af.length - margin &&
+          [wall.start, wall.end].every((point) => {
+            const [along, across] = project(point, axis)
+            return (
+              along >= -axis.thickness &&
+              along <= af.length + axis.thickness &&
+              Math.abs(across) <= (axis.thickness + wall.thickness) / 2
+            )
+          })
+        )
+      })
+    )
+      pixelWalls.splice(index, 1)
   }
   regularizeWalls(pixelWalls)
   const pixelOpenings: PixelOpening[] = []
@@ -1142,12 +1471,17 @@ export async function buildNativeMaskPreview(
       width: host.interval[1] - host.interval[0],
       method: host.method,
       kind: structuralClass === 'door' ? 'door' : 'window',
-      ...(structuralClass === 'door' ? inferDoorOrientation({
-        start: wallPoint(host.wall, host.interval[0]),
-        end: wallPoint(host.wall, host.interval[1]),
-        thickness: host.wall.thickness,
-        method: host.method,
-      }, source) : {}),
+      ...(structuralClass === 'door'
+        ? inferDoorOrientation(
+            {
+              start: wallPoint(host.wall, host.interval[0]),
+              end: wallPoint(host.wall, host.interval[1]),
+              thickness: host.wall.thickness,
+              method: host.method,
+            },
+            source,
+          )
+        : {}),
     })
   }
 
@@ -1183,41 +1517,72 @@ export async function buildNativeMaskPreview(
   })
   for (const [child, parent] of sourceParents) {
     const childNodes = prepared.sourceToNative[child]
-    if (childNodes) prepared.sourceToNative[parent] = [...new Set([...(prepared.sourceToNative[parent] ?? []), ...childNodes])]
+    if (childNodes)
+      prepared.sourceToNative[parent] = [
+        ...new Set([...(prepared.sourceToNative[parent] ?? []), ...childNodes]),
+      ]
   }
-  const context = addReconstructionContext(prepared.nodes, prepared.levelId,
-    { ...variant, candidates: resolved.map(entry => entry.candidate) }, source, options)
-  for (const [index, zone] of context.zones.entries()) mappings.push({
-    sourceId: `zone:${index + 1}`, nodeIds: [zone.id], status: 'approximated',
-    detail: 'Region from reconstructed wall boundaries; readable source labels name zones. Open-plan divisions are approximate, not added walls.',
-  })
-  for (const [index, prop] of context.props.entries()) mappings.push({
-    sourceId: `prop:${index + 1}`, nodeIds: [prop.id], status: 'approximated',
-    detail: 'Approximate native block from source-ink evidence. Classification is retained when reviewed, otherwise unclassified. Height is assumed; no catalog asset or exact furnishing geometry is claimed.',
-  })
+  const context = addReconstructionContext(
+    prepared.nodes,
+    prepared.levelId,
+    { ...variant, candidates: resolved.map((entry) => entry.candidate) },
+    source,
+    options,
+  )
+  for (const [index, zone] of context.zones.entries())
+    mappings.push({
+      sourceId: `zone:${index + 1}`,
+      nodeIds: [zone.id],
+      status: 'approximated',
+      detail:
+        'Region from reconstructed wall boundaries; readable source labels name zones. Open-plan divisions are approximate, not added walls.',
+    })
+  for (const [index, prop] of context.props.entries())
+    mappings.push({
+      sourceId: `prop:${index + 1}`,
+      nodeIds: [prop.id],
+      status: 'approximated',
+      detail:
+        'Approximate native block from source-ink evidence. Classification is retained when reviewed, otherwise unclassified. Height is assumed; no catalog asset or exact furnishing geometry is claimed.',
+    })
   issues.push(...(source.issues ?? []))
 
   const existingMappings = new Map(mappings.map((mapping) => [mapping.sourceId, mapping]))
   for (const { candidate, structuralClass } of resolved) {
     const nodeIds = prepared.sourceToNative[candidate.id] ?? []
-    if (structuralClass !== 'wall' && !nodeIds.some(id => prepared.nodes[id]?.type === structuralClass)) {
-      mappings.push({ sourceId: candidate.id, nodeIds, status: 'unresolved',
-        detail: `Supporting wall geometry was retained, but this ${structuralClass} did not yield a distinct hosted opening.` })
+    if (
+      structuralClass !== 'wall' &&
+      !nodeIds.some((id) => prepared.nodes[id]?.type === structuralClass)
+    ) {
+      mappings.push({
+        sourceId: candidate.id,
+        nodeIds,
+        status: 'unresolved',
+        detail: `Supporting wall geometry was retained, but this ${structuralClass} did not yield a distinct hosted opening.`,
+      })
       continue
     }
     if (nodeIds.length > 0) {
       mappings.push({
         sourceId: candidate.id,
         nodeIds,
-        status: candidate.decision?.action === 'needs_repair' ||
+        status:
+          candidate.decision?.action === 'needs_repair' ||
           candidate.decision?.correctedClass === 'uncertain' ||
-          pixelWalls.some(wall => wall.derivation === 'opening-implied-host' && wall.sourceIds.includes(candidate.id))
-          ? 'approximated' : 'converted',
-        detail: `${structuralClass === 'wall'
-          ? `Fitted ${nodeIds.length} connected wall segment(s) from the retained mask.`
-          : `Fitted a hosted ${structuralClass}; an opening itself can establish its local wall.`}${
+          pixelWalls.some(
+            (wall) =>
+              wall.derivation === 'opening-implied-host' && wall.sourceIds.includes(candidate.id),
+          )
+            ? 'approximated'
+            : 'converted',
+        detail: `${
+          structuralClass === 'wall'
+            ? `Fitted ${nodeIds.length} connected wall segment(s) from the retained mask.`
+            : `Fitted a hosted ${structuralClass}; an opening itself can establish its local wall.`
+        }${
           candidate.decision?.action === 'needs_repair'
-            ? ` Best-effort approximation; review warning retained: ${candidate.decision.evidence}` : ''
+            ? ` Best-effort approximation; review warning retained: ${candidate.decision.evidence}`
+            : ''
         }`,
       })
       continue
@@ -1232,7 +1597,7 @@ export async function buildNativeMaskPreview(
 
   variant.missingFeatures.forEach((proposal, index) => {
     const sourceId = `missing:${index + 1}:${proposal.kind}`
-    if (mappings.some(mapping => mapping.sourceId === sourceId)) return
+    if (mappings.some((mapping) => mapping.sourceId === sourceId)) return
     addUnresolved(
       mappings,
       issues,
