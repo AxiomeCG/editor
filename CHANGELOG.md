@@ -10,6 +10,7 @@
 
 ### Fixes
 
+- Move the Environment zoo/museum/gym testbed into the Environment repository; remove its routes and homepage link from the main editor app.
 - Export the viewer's shadow-only layer for plugin consumers.
 - Remove the nonworking god-ray post-process and its dedicated viewer API; preserve sky, fog, lighting, and ordinary shadows.
 - Preserve grass and procedural material colors in portable exports; freeze instancing and deformation without changing the live scene or saved-viewer animation clips.
