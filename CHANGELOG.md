@@ -10,6 +10,7 @@
 
 ### Fixes
 
+- Omit stale viewer-surroundings selections from GLB/USDZ downloads after a presentation is unregistered or its plugin is uninstalled.
 - Keep export settings scrollable and group advanced model options in a keyboard-accessible disclosure.
 - Preserve child geometry when exporting empty mesh containers to USDZ.
 - Pin Environment to its published GitHub commit instead of a vendored archive.
