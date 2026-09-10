@@ -124,6 +124,29 @@ Use `bake: 'replace'` with `bakeGeometry` when the generic GLB should retain the
 portable static snapshot while Pascal's baked viewer hides it and mounts
 `bakeReplaceRenderer` for the richer live result.
 
+`def.bakeGeometryAsync(node, ctx)` is the asynchronous counterpart for material
+baking and texture reads. Portable export awaits it once instead of invoking the
+synchronous hook; synchronous geometry-only callers retain `bakeGeometry`.
+Both return detached, local-space trees owned by the export artifact. Context
+includes captured materials and level data as well as semantic node lookup.
+
+Model exports accept `excludedNodeTypes?: readonly string[]`. Matching registered
+subtrees are omitted before cloning or invoking either builder. Filtering affects
+output, not the complete semantic context available to retained builders.
+
+Settings → Export → **Include in file** discovers procedural kinds from
+`bakeGeometry`, `bakeGeometryAsync`, or `bake: 'replace'`, including palette-hidden
+kinds. Node filters apply to model downloads, not saved-viewer artifacts, print
+profiles, scene JSON, or floor-plan PDFs. GLB and USDZ additionally accept
+`includedPresentationIds` for explicitly selected static presentation builders;
+live presentation subtrees remain outside `scene-renderer` and are never cloned.
+
+Portable GLB/USDZ outputs freeze instancing and deformation and normalize
+material textures, vertex colors, sidedness, and reflected geometry. Saved-viewer
+artifacts retain their authored animation clips. Preparation captures the source
+synchronously, restores viewer state before asynchronous work, and returns an
+owned artifact that callers must dispose after serialization or failure.
+
 ## Selection presentation
 
 `capabilities.selectionHighlight` controls only the Editor's material-based

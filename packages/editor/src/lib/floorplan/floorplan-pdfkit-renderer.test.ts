@@ -95,7 +95,7 @@ describe('renderFloorplanGeometryToPdfKit', () => {
 
     const pdf = await renderTestPdf(geometry)
 
-    expect(pdf).toMatch(/f\\*/)
+    expect(pdf).toMatch(/f\*/)
   })
 
   test('writes a data-url PNG image without resolving it as an asset', async () => {

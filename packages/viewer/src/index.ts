@@ -55,10 +55,7 @@ export {
 export {
   SceneAtmosphere,
   type SceneAtmosphereSource,
-  SceneSunScattering,
-  type SceneSunScatteringSource,
   useSceneAtmosphere,
-  useSceneSunScattering,
 } from './components/viewer/scene-atmosphere'
 export { SceneEnvironment } from './components/viewer/scene-environment'
 export {
@@ -66,9 +63,13 @@ export {
   useSceneGroundReplacement,
 } from './components/viewer/scene-ground-replacement'
 export {
+  isViewerPresentationTextureBorrowed,
+  markViewerPresentationTextureBorrowed,
   registerViewerPresentation,
   type ViewerPresentationConfiguration,
   type ViewerPresentationContribution,
+  type ViewerPresentationExportContext,
+  type ViewerPresentationStaticExport,
   ViewerPresentations,
   viewerPresentationRegistry,
 } from './components/viewer/viewer-presentations'

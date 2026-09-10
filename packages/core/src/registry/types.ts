@@ -1087,6 +1087,15 @@ export type NodeDefinition<S extends ZodObject<any>> = {
    * snapshot for this node and use exporter-supported Three.js materials.
    */
   bakeGeometry?: BakeGeometryBuilder<z.infer<S>>
+  /**
+   * Optional asynchronous export-only geometry builder for textured static artifacts.
+   * Export preparation awaits this exactly once in place of {@link bakeGeometry}.
+   * Synchronous geometry-only callers continue to use `bakeGeometry`.
+   *
+   * The returned tree follows the same ownership contract: it is detached,
+   * local-space, complete for the node, and owned by the export artifact.
+   */
+  bakeGeometryAsync?: BakeGeometryAsyncBuilder<z.infer<S>>
 
   /**
    * Renderer for this kind. Optional under the three-checkbox composition
@@ -1558,6 +1567,7 @@ export type BakeReplaceRenderer<N> = {
 }
 
 export type BakeGeometryBuilder<N> = (node: N, ctx: GeometryContext) => Object3D
+export type BakeGeometryAsyncBuilder<N> = (node: N, ctx: GeometryContext) => Promise<Object3D>
 
 export type AssetRef = {
   id: string

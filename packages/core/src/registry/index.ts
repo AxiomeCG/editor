@@ -66,6 +66,7 @@ export type {
   AnyNodeDefinition,
   AssetRef,
   BakeGeometryBuilder,
+  BakeGeometryAsyncBuilder,
   BakePolicy,
   BakeReplaceRenderer,
   Capabilities,

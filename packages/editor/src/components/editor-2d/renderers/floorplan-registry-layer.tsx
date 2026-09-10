@@ -410,10 +410,10 @@ export function siteToFloorplanTransform(
   const sin = Math.sin(buildingRotationY)
   return {
     translate: [
-      -buildingPosition[0] * cos - buildingPosition[2] * sin,
-      buildingPosition[0] * sin - buildingPosition[2] * cos,
+      -buildingPosition[0] * cos + buildingPosition[2] * sin,
+      -buildingPosition[0] * sin - buildingPosition[2] * cos,
     ],
-    rotate: -buildingRotationY,
+    rotate: buildingRotationY,
   }
 }
 
@@ -3267,12 +3267,15 @@ export function isFloorplanNodeVisible(node: AnyNode, liveOverride?: LiveNodeOve
   return (node as { visible?: boolean }).visible !== false
 }
 
-function isFloorplanHierarchyVisible(
+export function isFloorplanHierarchyVisible(
   node: AnyNode,
   nodes: Record<string, AnyNode>,
   liveOverrides: Map<string, LiveNodeOverrides>,
   rootId: AnyNodeId,
 ): boolean {
+  const root = nodes[rootId]
+  if (root && !isFloorplanNodeVisible(root, liveOverrides.get(root.id))) return false
+
   let current: AnyNode | undefined = node
   const seen = new Set<AnyNodeId>()
   while (current) {

@@ -1,6 +1,6 @@
 import { sceneRegistry } from '@pascal-app/core'
-import { useFrame, useThree } from '@react-three/fiber'
-import { useCallback, useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
+import { useMemo, useRef } from 'react'
 import type {
   AmbientLight,
   DirectionalLight,
@@ -11,7 +11,7 @@ import * as THREE from 'three/webgpu'
 import { SHADOW_ONLY_LAYER } from '../../lib/layers'
 import { getSceneTheme } from '../../lib/scene-themes'
 import useViewer from '../../store/use-viewer'
-import { setSceneAtmosphereSunLight, useSceneAtmosphere } from './scene-atmosphere'
+import { useSceneAtmosphere } from './scene-atmosphere'
 
 // Diagnostic toggle: `?disable=shadows` skips the shadow-map render pass
 // (which doubles draw calls for every shadow-casting mesh) so you can
@@ -80,20 +80,12 @@ export function Lights() {
   const theme = getSceneTheme(sceneTheme)
   const shadows = useViewer((state) => state.shadows)
   const atmosphere = useSceneAtmosphere()
-  const scene = useThree((state) => state.scene)
   const lightSlots = useMemo(
     () => Array.from({ length: atmosphere ? 2 : theme.lights.length }, (_, index) => index),
     [atmosphere, theme.lights.length],
   )
 
   const lightRefs = useRef<Array<DirectionalLight | null>>([])
-  const bindSunLight = useCallback(
-    (light: DirectionalLight | null) => {
-      lightRefs.current[0] = light
-      setSceneAtmosphereSunLight(scene, light)
-    },
-    [scene],
-  )
   const shadowCamera = useRef<OrthographicCamera>(null)
   // Initial ortho half-size; overridden each refresh to fit the building.
   const shadowCameraSize = 50
@@ -316,13 +308,9 @@ export function Lights() {
                 ? [direction.x * 100, direction.y * 100, direction.z * 100]
                 : (themeLight?.position ?? [0, 1, 0])
             }
-            ref={
-              index === 0
-                ? bindSunLight
-                : (light) => {
-                    lightRefs.current[index] = light
-                  }
-            }
+            ref={(light) => {
+              lightRefs.current[index] = light
+            }}
             shadow-bias={SHADOW_DEPTH_BIAS}
             shadow-mapSize={[1024, 1024]}
             shadow-normalBias={SHADOW_NORMAL_BIAS}

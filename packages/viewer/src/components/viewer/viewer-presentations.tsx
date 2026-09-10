@@ -1,6 +1,7 @@
 'use client'
 
-import { useScene, type LazyComponent } from '@pascal-app/core'
+import { type AnyNode, useScene, type LazyComponent } from '@pascal-app/core'
+import type { Object3D, Texture } from 'three'
 import { lazy, type ComponentType, Suspense, useSyncExternalStore } from 'react'
 import { ErrorBoundary } from '../error-boundary'
 
@@ -14,6 +15,34 @@ export type ViewerPresentationConfiguration = {
   /** Notifies the host only when persisted presentation state changes. */
   subscribe: (onChange: () => void) => () => void
 }
+export type ViewerPresentationExportContext = {
+  /** Full semantic snapshot; output selection never removes generation context. */
+  nodes: Readonly<Record<string, AnyNode>>
+  /** Detached contribution configuration captured once when export starts. */
+  configuration: unknown
+  onlyVisible: boolean
+  excludedNodeTypes: readonly string[]
+}
+
+export type ViewerPresentationStaticExport = {
+  label: string
+  build: (ctx: ViewerPresentationExportContext) => Object3D | null | Promise<Object3D | null>
+}
+const borrowedStaticExportTextures = new WeakSet<Texture>()
+
+/**
+ * Marks a cached presentation texture handle as borrowed. Static export owns
+ * every returned resource by default; the host clones marked handles before
+ * attaching the contribution and never disposes the marked source handle.
+ */
+export function markViewerPresentationTextureBorrowed<T extends Texture>(texture: T): T {
+  borrowedStaticExportTextures.add(texture)
+  return texture
+}
+
+export function isViewerPresentationTextureBorrowed(texture: Texture): boolean {
+  return borrowedStaticExportTextures.has(texture)
+}
 
 export type ViewerPresentationContribution = {
   /** Globally unique contribution id, conventionally `${pluginId}:presentation`. */
@@ -24,6 +53,11 @@ export type ViewerPresentationContribution = {
   component: LazyComponent
   /** Optional host persistence seam; never stored in the semantic scene graph. */
   configuration?: ViewerPresentationConfiguration
+  /**
+   * Explicit opt-in static artifact contribution. The returned root must be
+   * detached and uses the presentation's existing world coordinates.
+   */
+  staticExport?: ViewerPresentationStaticExport
 }
 
 function isDevMode(): boolean {
@@ -82,6 +116,18 @@ class ViewerPresentationRegistryImpl {
     ) {
       throw new Error(
         '[viewer:presentations] configuration must implement getSnapshot, restore, reset, and subscribe',
+      )
+    }
+    if (
+      contribution.staticExport !== undefined &&
+      (contribution.staticExport === null ||
+        typeof contribution.staticExport !== 'object' ||
+        typeof contribution.staticExport.label !== 'string' ||
+        contribution.staticExport.label.length === 0 ||
+        typeof contribution.staticExport.build !== 'function')
+    ) {
+      throw new Error(
+        '[viewer:presentations] staticExport must provide a non-empty label and build function',
       )
     }
     if (this.contributions.has(contribution.id)) {

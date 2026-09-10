@@ -1,10 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Color, Layers, Matrix4, type Object3D, Scene, UnsignedByteType } from 'three'
-import { bilateralBlur } from 'three/addons/tsl/display/BilateralBlurNode.js'
-import type BilateralBlurNode from 'three/addons/tsl/display/BilateralBlurNode.js'
-import { godrays } from 'three/addons/tsl/display/GodraysNode.js'
-import type GodraysNode from 'three/addons/tsl/display/GodraysNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js'
 import {
@@ -29,15 +25,8 @@ import {
   vec3,
   vec4,
 } from 'three/tsl'
-import {
-  RenderPipeline,
-  TimestampQuery,
-  type Node,
-  type UniformNode,
-  type WebGPURenderer,
-} from 'three/webgpu'
+import { RenderPipeline, TimestampQuery, type WebGPURenderer } from 'three/webgpu'
 import { backdropGradient, deepSkyColor, horizonHazeColor } from '../../lib/backdrop'
-import { depthAwareScatteringBlend } from '../../lib/depth-aware-scattering'
 import { edgeColorFor, edgeOpacityScaleFor } from '../../lib/edge-style'
 import { PERF_OVERLAY_ENABLED } from '../../lib/gpu-perf'
 import { inkedEdges } from '../../lib/ink-edges'
@@ -47,12 +36,7 @@ import { recordPerfSample, timeSpan } from '../../lib/perf-tracks'
 import { getSceneTheme } from '../../lib/scene-themes'
 import { packNormalToRGB, unpackRGBToNormal } from '../../lib/tsl-compat'
 import useViewer from '../../store/use-viewer'
-import {
-  type SceneSunScatteringSource,
-  useSceneAtmosphere,
-  useSceneAtmosphereSunLight,
-  useSceneSunScattering,
-} from './scene-atmosphere'
+import { useSceneAtmosphere } from './scene-atmosphere'
 
 // Scene-referred grade applied before the output tone mapping (AgX). AgX rolls
 // highlights off gently but reads flat on its own; a mild mid-gray-pivot
@@ -76,25 +60,6 @@ export const SSGI_PARAMS = {
   useLinearThickness: false,
   useScreenSpaceSampling: true,
   useTemporalFiltering: false,
-}
-
-const SUN_SCATTERING_PARAMS = {
-  resolutionScale: 0.25,
-  raymarchSteps: 28,
-  density: 0.7,
-  maxDensity: 0.36,
-  distanceAttenuation: 1.6,
-  blurSigma: 2,
-  blurSigmaColor: 0.08,
-  edgeRadius: 2,
-  edgeStrength: 1.5,
-} as const
-
-type SunScatteringRuntime = {
-  godrays: GodraysNode
-  blur: BilateralBlurNode
-  blendColor: UniformNode<'color', Color>
-  source: SceneSunScatteringSource
 }
 
 // Diagnostic toggles for thermal A/B testing. Add
@@ -236,14 +201,11 @@ const PostProcessingPasses = ({
 }) => {
   const { gl: renderer, invalidate, scene, camera, size } = useThree()
   const atmosphere = useSceneAtmosphere()
-  const sunLight = useSceneAtmosphereSunLight()
-  const sunScattering = useSceneSunScattering()
   const directSkyNode = useMemo(
     () => (atmosphere ? atmosphere.skyRadiance(normalWorldGeometry) : null),
     [atmosphere],
   )
   const renderPipelineRef = useRef<RenderPipeline | null>(null)
-  const sunScatteringRuntimeRef = useRef<SunScatteringRuntime | null>(null)
   const hasPipelineErrorRef = useRef(false)
   const retryCountRef = useRef(0)
   const rebuildTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -319,7 +281,6 @@ const PostProcessingPasses = ({
   const edges = useViewer((s) => s.edges)
   const inkOpacityOverride = useViewer((s) => s.inkOpacity)
   const transparentBackground = useViewer((s) => s.transparentBackground)
-  const shadows = useViewer((s) => s.shadows)
   const lastProjectIdRef = useRef(projectId)
 
   // Bump this to force a pipeline rebuild (used by retry logic)
@@ -337,10 +298,6 @@ const PostProcessingPasses = ({
   const disposePipeline = useCallback(() => {
     renderPipelineRef.current?.dispose()
     renderPipelineRef.current = null
-    const scattering = sunScatteringRuntimeRef.current
-    sunScatteringRuntimeRef.current = null
-    scattering?.blur.dispose()
-    scattering?.godrays.dispose()
   }, [])
 
   // Reset retry state when project changes
@@ -420,16 +377,7 @@ const PostProcessingPasses = ({
     const denoiseEnabled = ssgiEnabled && !perfDisable.denoise
     const outlineEnabled = !perfDisable.outline
     const inkEnabled = edges !== 'off'
-    const scatteringEnabled =
-      shading === 'rendered' &&
-      shadows &&
-      sunScattering !== null &&
-      sunLight !== null &&
-      sunLight.castShadow
-    // The normal MRT is only needed by SSGI and ink. Sun scattering reuses
-    // the pass's existing depth attachment without widening the MRT.
     const needsNormalMRT = ssgiEnabled || inkEnabled
-    const needsSceneDepth = needsNormalMRT || scatteringEnabled
     // Soft = thin (1px sample radius) + faint (50% opacity); strong = thick
     // (2px, ~2× wider detected band) + solid (100%). The edge masks saturate,
     // so radius+opacity are what actually separate the two modes.
@@ -443,7 +391,6 @@ const PostProcessingPasses = ({
       outline: outlineEnabled,
       perfDisable,
       projectId,
-      sunScattering: scatteringEnabled,
       shading,
       transparentBackground,
       rendererCtor: (renderer as any).constructor?.name,
@@ -505,8 +452,7 @@ const PostProcessingPasses = ({
         contentAlpha,
       ) as unknown as ReturnType<typeof vec4>
 
-      // Depth + normal MRT — shared by SSGI, screen-space ink, and the
-      // presentation visibility mask.
+      // Depth + normal MRT — shared by SSGI and screen-space ink.
       if (needsNormalMRT) {
         scenePass.setMRT(
           mrt({
@@ -516,7 +462,7 @@ const PostProcessingPasses = ({
           }),
         )
       }
-      const scenePassDepth = needsSceneDepth ? scenePass.getTextureNode('depth') : null
+      const scenePassDepth = needsNormalMRT ? scenePass.getTextureNode('depth') : null
       const scenePassNormal = needsNormalMRT ? scenePass.getTextureNode('normal') : null
       if (scenePassNormal) {
         const normalTexture = scenePass.getTexture('normal')
@@ -582,40 +528,6 @@ const PostProcessingPasses = ({
           add(scenePassColor.rgb.mul(ao), add(zonePass.rgb, scenePassDiffuse.rgb.mul(gi))),
           contentAlpha,
         )
-      }
-
-      let sunScatteringDelta: Node<'vec3'> | null = null
-      if (scatteringEnabled && scenePassDepth && sunLight && sunScattering) {
-        const godraysPass = godrays(scenePassDepth, camera, sunLight)
-        godraysPass.resolutionScale = SUN_SCATTERING_PARAMS.resolutionScale
-        godraysPass.raymarchSteps.value = SUN_SCATTERING_PARAMS.raymarchSteps
-        godraysPass.density.value = SUN_SCATTERING_PARAMS.density
-        godraysPass.maxDensity.value = SUN_SCATTERING_PARAMS.maxDensity * sunScattering.strength
-        godraysPass.distanceAttenuation.value = SUN_SCATTERING_PARAMS.distanceAttenuation
-
-        const blurPass = bilateralBlur(godraysPass.getTextureNode())
-        blurPass.sigma = SUN_SCATTERING_PARAMS.blurSigma
-        blurPass.sigmaColor = SUN_SCATTERING_PARAMS.blurSigmaColor
-        const blendColor = uniform(sunScattering.color.clone())
-        sunScatteringRuntimeRef.current = {
-          godrays: godraysPass,
-          blur: blurPass,
-          blendColor,
-          source: sunScattering,
-        }
-        const scatteringComposite = depthAwareScatteringBlend(
-          scenePassColor,
-          blurPass.getTextureNode(),
-          scenePassDepth,
-          camera,
-          {
-            blendColor,
-            edgeRadius: SUN_SCATTERING_PARAMS.edgeRadius,
-            edgeStrength: SUN_SCATTERING_PARAMS.edgeStrength,
-          },
-        )
-        sunScatteringDelta = scatteringComposite.rgb.sub(scenePassColor.rgb)
-        sceneColor = vec4(sceneColor.rgb.add(sunScatteringDelta), sceneColor.a)
       }
 
       // Screen-space ink outline (SketchUp look) — depth/normal edge detection
@@ -712,9 +624,6 @@ const PostProcessingPasses = ({
             sky: bgSkyUniform.current,
             skyDeep: bgSkyDeepUniform.current,
           })
-      if (sunScatteringDelta) {
-        bgGradient = bgGradient.add(sunScatteringDelta)
-      }
       if (shading === 'rendered') {
         bgGradient = gradeRgb(bgGradient)
       }
@@ -776,9 +685,6 @@ const PostProcessingPasses = ({
     projectId,
     renderer,
     scene,
-    shadows,
-    sunLight,
-    sunScattering,
     shading,
     transparentBackground,
     size.height,
@@ -808,15 +714,6 @@ const PostProcessingPasses = ({
         // A failed empty draw changes nothing — systems keep ticking.
       }
       return
-    }
-
-    const scattering = sunScatteringRuntimeRef.current
-    if (scattering) {
-      const strength = Number.isFinite(scattering.source.strength)
-        ? Math.max(0, Math.min(1, scattering.source.strength))
-        : 0
-      scattering.godrays.maxDensity.value = SUN_SCATTERING_PARAMS.maxDensity * strength
-      scattering.blendColor.value.copy(scattering.source.color)
     }
 
     // Animate background colour toward the current scene theme target (same lerp as AnimatedBackground)
