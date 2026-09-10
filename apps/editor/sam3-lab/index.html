@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>SAM3 Floorplan Inspector</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f3f1eb;
+      --sheet: #fbfaf6;
+      --raised: #ffffff;
+      --inset: #ebe9e3;
+      --graphite: #202321;
+      --secondary: #555b57;
+      --tertiary: #747a76;
+      --muted: #929792;
+      --rule: rgba(30, 36, 32, 0.13);
+      --rule-strong: rgba(30, 36, 32, 0.24);
+      --blueprint: #2166d1;
+      --blueprint-dark: #174d9f;
+      --blueprint-soft: #e8f0fc;
+      --positive: #197a52;
+      --positive-soft: #e5f4ed;
+      --negative: #b7463f;
+      --negative-soft: #f9eae8;
+      --warning: #8b6100;
+      --warning-soft: #fbf1d8;
+      --error: #a7332d;
+      --error-soft: #f9e6e4;
+      --focus: rgba(33, 102, 209, 0.28);
+      --radius-control: 6px;
+      --radius-panel: 10px;
+      --shadow-panel: 0 0 0 1px var(--rule), 0 2px 5px rgba(30, 36, 32, 0.04), 0 12px 30px rgba(30, 36, 32, 0.035);
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      min-width: 320px;
+      background: var(--paper);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--graphite);
+      background: var(--paper);
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    button, input { font: inherit; }
+    button, input, a { -webkit-tap-highlight-color: transparent; }
+
+    button, input {
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius-control);
+    }
+
+    input {
+      width: 100%;
+      color: var(--graphite);
+      background: var(--inset);
+      padding: 8px 10px;
+    }
+
+    input[type="checkbox"], input[type="radio"] { width: auto; accent-color: var(--blueprint); }
+    input[type="range"] { padding: 0; accent-color: var(--blueprint); background: transparent; border: 0; }
+
+    button, .button-link {
+      min-height: 40px;
+      padding: 8px 12px;
+      color: var(--graphite);
+      background: var(--raised);
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius-control);
+      cursor: pointer;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1), border-color 140ms cubic-bezier(0.23, 1, 0.32, 1), color 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    button:hover:not(:disabled), .button-link:hover { background: var(--blueprint-soft); border-color: rgba(33, 102, 209, 0.42); }
+    button:active:not(:disabled), .button-link:active { transform: scale(0.97); }
+    button:disabled { cursor: not-allowed; color: var(--muted); background: var(--inset); opacity: 0.72; }
+
+    button:focus-visible, input:focus-visible, a:focus-visible, svg:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+      border-color: var(--blueprint);
+    }
+
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 64px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--rule);
+      background: var(--sheet);
+    }
+
+    .title-group { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 22px; line-height: 1.15; letter-spacing: -0.025em; font-weight: 700; }
+    h2 { font-size: 16px; line-height: 1.25; letter-spacing: -0.012em; font-weight: 700; }
+    h3 { font-size: 13px; line-height: 1.25; font-weight: 700; }
+    .eyebrow { color: var(--tertiary); font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+    .header-source { overflow: hidden; color: var(--secondary); font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+    .session-strip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .status-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 9px; border-radius: 999px; background: var(--inset); color: var(--secondary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .status-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .status-chip.good::before { background: var(--positive); }
+    .status-chip.warn::before { background: var(--warning); }
+    .status-chip.bad::before { background: var(--negative); }
+
+    .app-grid {
+      display: grid;
+      grid-template-columns: 304px minmax(420px, 1fr) 316px;
+      gap: 12px;
+      padding: 12px;
+      min-height: calc(100vh - 64px);
+    }
+
+    .panel {
+      min-width: 0;
+      background: var(--sheet);
+      border-radius: var(--radius-panel);
+      box-shadow: var(--shadow-panel);
+    }
+
+    .control-panel, .results-panel { padding: 16px; overflow: auto; }
+    .control-panel { max-height: calc(100vh - 88px); }
+    .results-panel { max-height: calc(100vh - 88px); }
+    .panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .section { padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--rule); }
+    .section:first-of-type { padding-top: 0; margin-top: 0; border-top: 0; }
+    .section-heading { margin-bottom: 8px; }
+    .helper { color: var(--tertiary); font-size: 12px; text-wrap: pretty; }
+    .field { display: grid; gap: 6px; margin-top: 12px; }
+    .field > label, .field-label { color: var(--secondary); font-size: 12px; font-weight: 700; }
+    .mono { font-family: "SFMono-Regular", Consolas, monospace; }
+    .tabular { font-variant-numeric: tabular-nums; }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 4px;
+      padding: 4px;
+      background: var(--inset);
+      border-radius: 9px;
+    }
+
+    .segmented label { position: relative; min-width: 0; }
+    .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+    .segmented span { display: grid; place-items: center; min-height: 40px; padding: 6px; border: 1px solid transparent; border-radius: 6px; color: var(--secondary); cursor: pointer; font-size: 12px; font-weight: 700; text-align: center; }
+    .segmented input:checked + span { color: var(--graphite); background: var(--raised); border-color: var(--rule); box-shadow: 0 1px 2px rgba(30, 36, 32, 0.07); }
+    .segmented input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+    .coordinate-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; }
+    .box-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .box-grid button { grid-column: 1 / -1; }
+    .compact-field { display: grid; gap: 4px; }
+    .compact-field label { color: var(--tertiary); font-size: 11px; font-weight: 700; }
+    .compact-button { min-width: 44px; padding-inline: 10px; }
+
+    .prompt-list { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+    .prompt-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) 40px; align-items: center; gap: 8px; min-height: 40px; padding: 4px 4px 4px 10px; border-radius: 7px; background: var(--inset); }
+    .prompt-swatch { width: 9px; height: 9px; border-radius: 50%; background: var(--blueprint); }
+    .prompt-swatch.positive { background: var(--positive); }
+    .prompt-swatch.negative { background: var(--negative); }
+    .prompt-swatch.box { border-radius: 2px; background: transparent; border: 2px solid var(--blueprint); }
+    .prompt-copy { overflow: hidden; color: var(--secondary); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .remove-button { min-width: 36px; min-height: 32px; padding: 2px; font-size: 18px; font-weight: 400; }
+    .prompt-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+
+    .json-preview { max-height: 190px; overflow: auto; margin: 10px 0 0; padding: 10px; border-radius: 7px; color: #d7e2dc; background: #212622; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+    .consent { display: grid; grid-template-columns: 20px 1fr; gap: 8px; align-items: start; margin-top: 12px; color: var(--secondary); font-size: 12px; }
+    .consent input { margin-top: 2px; }
+    .run-button { width: 100%; min-height: 48px; margin-top: 12px; color: white; background: var(--blueprint); border-color: var(--blueprint); }
+    .run-button:hover:not(:disabled) { color: white; background: var(--blueprint-dark); border-color: var(--blueprint-dark); }
+    .run-explanation { min-height: 18px; margin-top: 8px; color: var(--tertiary); font-size: 12px; }
+
+    .workspace-panel { display: grid; grid-template-rows: auto minmax(420px, 1fr) auto; height: calc(100dvh - 88px); min-height: 620px; overflow: hidden; }
+    .workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+    .view-options, .zoom-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .view-options { flex-wrap: wrap; }
+    .view-options label { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 4px 7px; border-radius: 5px; color: var(--secondary); font-size: 12px; font-weight: 600; cursor: pointer; }
+    .view-options label:has(input:checked) { background: var(--blueprint-soft); color: var(--blueprint-dark); }
+    .view-options label:has(input:disabled) { cursor: not-allowed; opacity: 0.45; }
+    .zoom-controls input { width: 120px; }
+    .zoom-readout { min-width: 42px; color: var(--secondary); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+
+    .canvas-viewport {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      place-items: start center;
+      padding: 20px;
+      background-color: #d9d8d2;
+      background-image: linear-gradient(rgba(46, 53, 49, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(46, 53, 49, 0.045) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    .canvas-frame { position: relative; flex: none; line-height: 0; background: white; box-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 8px 24px rgba(30,36,32,.12); }
+    #source-svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: crosshair; }
+    #source-svg.mode-box { cursor: crosshair; }
+    #source-svg.mode-negative { cursor: not-allowed; }
+    .source-image { pointer-events: none; }
+    .result-image { pointer-events: none; }
+    .positive-marker { fill: rgba(25, 122, 82, 0.18); stroke: var(--positive); }
+    .negative-marker { fill: rgba(183, 70, 63, 0.16); stroke: var(--negative); }
+    .box-marker { fill: rgba(33, 102, 209, 0.08); stroke: var(--blueprint); }
+    .draft-marker { fill: rgba(33, 102, 209, 0.04); stroke: var(--blueprint); stroke-dasharray: 8 5; }
+    .marker-cross { stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .marker-shape { stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+
+    .canvas-empty { position: absolute; inset: 0; display: grid; place-content: center; gap: 6px; padding: 24px; color: var(--tertiary); text-align: center; background: var(--inset); }
+    .canvas-empty[hidden] { display: none; }
+    .canvas-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; padding: 8px 12px; border-top: 1px solid var(--rule); color: var(--secondary); font-size: 12px; }
+    .coordinate-readout { font-family: "SFMono-Regular", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .stale-notice { color: var(--warning); font-weight: 700; }
+
+    .notice { margin-bottom: 12px; padding: 10px; border-radius: 7px; background: var(--inset); color: var(--secondary); font-size: 12px; }
+    .notice.warning { color: #634700; background: var(--warning-soft); }
+    .notice.error { color: var(--error); background: var(--error-soft); }
+    .notice.success { color: var(--positive); background: var(--positive-soft); }
+    .notice[hidden] { display: none; }
+
+    .run-list, .candidate-list, .warning-list, .artifact-list { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+    .run-list { grid-template-columns: minmax(0, 1fr); }
+    .run-button-row, .candidate-button { width: 100%; min-width: 0; min-height: 0; padding: 10px; text-align: left; }
+    .run-button-row.selected, .candidate-button.selected { border-color: var(--blueprint); background: var(--blueprint-soft); }
+    .run-line, .candidate-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .run-id { min-width: 0; overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .run-status { flex-shrink: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .run-status.completed { color: var(--positive); }
+    .run-status.failed { color: var(--negative); }
+    .run-meta, .candidate-meta { margin-top: 3px; color: var(--tertiary); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .candidate-score { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .candidate-score small { color: var(--tertiary); font-size: 10px; font-weight: 600; }
+    .warning-list li { padding: 7px 8px; border-radius: 5px; color: #634700; background: var(--warning-soft); font-size: 11px; }
+    .artifact-list { grid-template-columns: repeat(3, 1fr); }
+    .artifact-list a { display: grid; place-items: center; min-height: 40px; padding: 6px; border: 1px solid var(--rule-strong); border-radius: var(--radius-control); color: var(--blueprint-dark); background: var(--raised); font-size: 11px; font-weight: 700; text-decoration: none; }
+    .artifact-list a:hover { background: var(--blueprint-soft); }
+    .detail-grid { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; margin: 10px 0 0; font-size: 12px; }
+    .detail-grid dt { color: var(--tertiary); }
+    .detail-grid dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .empty-copy { padding: 20px 8px; color: var(--tertiary); font-size: 12px; text-align: center; text-wrap: pretty; }
+
+
+    .app-nav-link {
+      flex: none;
+      min-height: 36px;
+      padding: 7px 10px;
+      color: var(--blueprint-dark);
+      font-size: 12px;
+    }
+
+    .comparison-panel {
+      margin: 0 12px 12px;
+      padding: 16px;
+    }
+
+    .comparison-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .comparison-heading-copy {
+      display: grid;
+      gap: 4px;
+      max-width: 760px;
+    }
+
+    .comparison-heading-copy > p:last-child {
+      color: var(--secondary);
+      text-wrap: pretty;
+    }
+
+    .comparison-status {
+      flex: none;
+      min-width: 180px;
+      margin: 0;
+      text-align: right;
+    }
+    .comparison-assessment {
+      display: grid;
+      grid-template-columns: minmax(220px, .8fr) minmax(320px, 1.2fr);
+      gap: 12px;
+      margin-top: 12px;
+      padding: 12px;
+      border-left: 3px solid var(--blueprint);
+      border-radius: 8px;
+      background: var(--blueprint-soft);
+      box-shadow: inset 0 0 0 1px rgba(33, 102, 209, 0.14);
+    }
+
+    .comparison-assessment[hidden] { display: none; }
+    .comparison-assessment > div { display: grid; align-content: start; gap: 4px; min-width: 0; }
+    .assessment-recommendation { color: var(--blueprint-dark); font-size: 14px; font-weight: 700; text-wrap: pretty; }
+    .assessment-method { color: var(--secondary); font-size: 12px; text-wrap: pretty; }
+    .assessment-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      grid-column: 1 / -1;
+    }
+
+    .assessment-links .button-link {
+      min-height: 36px;
+      padding: 7px 10px;
+      color: var(--blueprint-dark);
+      font-size: 12px;
+    }
+
+    .comparison-source-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+      margin-top: 12px;
+      color: var(--tertiary);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+
+    .comparison-table-wrap {
+      overflow-x: auto;
+      margin-top: 10px;
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      background: var(--raised);
+    }
+
+    .comparison-table {
+      width: 100%;
+      min-width: 1080px;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .comparison-table caption {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--rule);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .comparison-table thead th {
+      color: var(--tertiary);
+      background: var(--inset);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .comparison-table tbody tr:last-child > * { border-bottom: 0; }
+    .comparison-table tbody tr:has(input:checked) { background: var(--blueprint-soft); }
+    .comparison-table tbody tr:hover { background: rgba(33, 102, 209, 0.045); }
+
+    .variant-choice {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      min-width: 180px;
+      color: var(--graphite);
+      cursor: pointer;
+    }
+
+    .variant-choice input { margin-top: 2px; }
+    .variant-label { display: grid; gap: 2px; }
+    .variant-label strong { line-height: 1.25; }
+    .variant-id { color: var(--tertiary); font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; overflow-wrap: anywhere; }
+    .table-stack { display: grid; gap: 2px; }
+    .table-stack small { color: var(--tertiary); font-size: 10px; }
+    .assessment-cell { min-width: 240px; color: var(--secondary); }
+    .assessment-cell .table-stack > strong { color: var(--blueprint-dark); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .assessment-cell .table-stack > strong:not(:first-child) { margin-top: 5px; }
+    .assessment-cell .table-stack > span { text-wrap: pretty; }
+    .unknown-value { color: var(--warning); font-weight: 700; }
+
+    .selected-variant-bar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .selected-variant-copy { display: grid; gap: 3px; }
+
+    .preview-control-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, .65fr) minmax(420px, 1.35fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .control-well {
+      min-width: 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--inset);
+    }
+
+    .source-view-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 0;
+      border: 0;
+    }
+
+    .source-view-options legend,
+    .assumption-form-title {
+      width: 100%;
+      color: var(--secondary);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .source-view-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 40px;
+      padding: 6px 9px;
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius-control);
+      background: var(--raised);
+      color: var(--secondary);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .source-view-options label:has(input:checked) {
+      color: var(--blueprint-dark);
+      border-color: rgba(33, 102, 209, 0.42);
+      background: var(--blueprint-soft);
+    }
+
+    .assumption-form {
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+    }
+    .assumption-form-title { grid-column: 1 / -1; }
+
+    .assumption-form .field { margin: 0; }
+    .assumption-form button { min-height: 40px; }
+    .assumption-disclaimer { grid-column: 1 / -1; color: var(--warning); font-size: 11px; text-wrap: pretty; }
+    .local-only-note { grid-column: 1 / -1; color: var(--tertiary); font-size: 11px; text-wrap: pretty; }
+
+    .comparison-view-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .comparison-figure {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--inset);
+      box-shadow: inset 0 0 0 1px var(--rule);
+    }
+
+    .comparison-figure-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--rule);
+      color: var(--secondary);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .comparison-image-stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 320px;
+      padding: 12px;
+      background-color: #d9d8d2;
+      background-image: linear-gradient(rgba(46, 53, 49, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(46, 53, 49, 0.045) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    .comparison-image-stage img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-height: 520px;
+      object-fit: contain;
+      background: white;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, .1);
+    }
+
+    .comparison-image-stage img[hidden] { display: none; }
+    .calibration-tools { display: grid; gap: 8px; margin-top: 12px; }
+    .calibration-actions, .native-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .calibration-points { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    #calibration-overlay { position: absolute; pointer-events: none; }
+    #calibration-stage[data-picking="true"] { cursor: crosshair; outline: 2px solid var(--blueprint); outline-offset: -2px; }
+    #calibration-stage:focus-visible { outline: 3px solid var(--blueprint); }
+    .native-view-controls button[aria-pressed="true"] { background: var(--blueprint-soft); color: var(--blueprint-dark); }
+    #native-3d-host { position: absolute; inset: 0; overflow: hidden; }
+    .comparison-image-stage:has(#native-3d-host:not([hidden])) { height: 544px; }
+    #native-3d-host canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    #native-3d-controls { padding: 8px 10px; }
+    .mapping-status.approximated { color: var(--warning); }
+    .comparison-image-empty { max-width: 320px; color: var(--tertiary); font-size: 12px; text-align: center; text-wrap: pretty; }
+    .comparison-figure figcaption { min-height: 40px; padding: 8px 10px; color: var(--tertiary); font-size: 11px; text-wrap: pretty; }
+
+    .preview-status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 44px;
+      margin-top: 8px;
+    }
+
+    .preview-status-row .notice { flex: 1; margin: 0; }
+
+    .preview-ledger {
+      display: grid;
+      grid-template-columns: minmax(220px, .7fr) minmax(320px, 1.3fr);
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .ledger-section {
+      min-width: 0;
+      padding-top: 12px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .node-counts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin: 8px 0 0;
+    }
+
+    .node-counts div {
+      padding: 8px;
+      border-radius: 6px;
+      background: var(--inset);
+    }
+
+    .node-counts dt { color: var(--tertiary); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .node-counts dd { margin: 2px 0 0; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .diagnostic-list,
+    .quality-list,
+    .caveat-list {
+      display: grid;
+      gap: 6px;
+      margin: 8px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .diagnostic-list li,
+    .quality-list li,
+    .caveat-list li {
+      padding: 8px 9px;
+      border-radius: 6px;
+      background: var(--inset);
+      color: var(--secondary);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .diagnostic-list li.unresolved { color: #634700; background: var(--warning-soft); }
+    .diagnostic-list strong, .quality-list strong { color: var(--graphite); }
+    .diagnostic-list small, .quality-list small { display: block; margin-top: 3px; color: var(--tertiary); font-size: 10px; }
+
+    .mapping-table { min-width: 620px; }
+    .mapping-status { font-weight: 700; text-transform: capitalize; }
+    .mapping-status.converted { color: var(--positive); }
+    .mapping-status.unresolved { color: var(--warning); }
+
+    .quality-list {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .quality-list li { min-height: 100%; }
+    .quality-stages { display: block; margin-top: 5px; color: var(--secondary); }
+    .quality-usage { display: block; margin-top: 7px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; }
+
+    @media (max-width: 900px) {
+      .comparison-heading,
+      .selected-variant-bar,
+      .preview-status-row { align-items: stretch; flex-direction: column; }
+      .comparison-status { min-width: 0; text-align: left; }
+      .comparison-assessment { grid-template-columns: 1fr; }
+      .preview-control-grid,
+      .comparison-view-grid,
+      .preview-ledger { grid-template-columns: 1fr; }
+      .assumption-form { grid-template-columns: 1fr 1fr; }
+      .assumption-form button { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 560px) {
+      .comparison-panel { margin: 0 8px 8px; padding: 12px; }
+      .assumption-form { grid-template-columns: 1fr; }
+      .assumption-form button,
+      .assumption-disclaimer,
+      .local-only-note { grid-column: 1; }
+      .comparison-image-stage { min-height: 240px; padding: 8px; }
+      .node-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 1180px) {
+      .app-grid { grid-template-columns: 288px minmax(0, 1fr); }
+      .results-panel { grid-column: 1 / -1; max-height: none; display: grid; grid-template-columns: minmax(240px, .8fr) minmax(320px, 1.2fr); gap: 16px; }
+      .results-panel > .panel-heading { grid-column: 1 / -1; margin-bottom: 0; }
+      #run-detail { border-left: 1px solid var(--rule); padding-left: 16px; }
+    }
+
+    @media (max-width: 760px) {
+      .app-header { align-items: flex-start; flex-direction: column; }
+      .session-strip { justify-content: flex-start; }
+      .app-grid { display: flex; flex-direction: column; padding: 8px; }
+      .control-panel, .results-panel { max-height: none; }
+      .workspace-panel { min-height: 520px; order: -1; }
+      .workspace-toolbar { align-items: flex-start; flex-direction: column; }
+      .canvas-viewport { min-height: 400px; padding: 12px; }
+      .results-panel { display: block; }
+      #run-detail { border-left: 0; border-top: 1px solid var(--rule); margin-top: 16px; padding: 16px 0 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="title-group">
+      <div>
+        <p class="eyebrow">Isolated inspection tool</p>
+        <h1>SAM3 Floorplan Inspector</h1>
+      </div>
+      <p id="source-name" class="header-source">Loading source…</p>
+    </div>
+    <a class="button-link app-nav-link" href="#comparison-workbench">Comparison workbench</a>
+    <div class="session-strip" aria-label="Session status">
+      <span id="key-status" class="status-chip">Key unknown</span>
+      <span id="budget-status" class="status-chip">Budget —</span>
+      <span id="busy-status" class="status-chip">Checking session</span>
+    </div>
+  </header>
+
+  <main class="app-grid">
+    <aside class="panel control-panel" aria-labelledby="prompts-heading">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Object 1</p>
+          <h2 id="prompts-heading">Segmentation prompts</h2>
+        </div>
+      </div>
+
+      <section class="section" aria-labelledby="draw-heading">
+        <h3 id="draw-heading" class="section-heading">Draw on source</h3>
+        <div class="segmented" role="radiogroup" aria-label="Drawing tool">
+          <label><input type="radio" name="draw-tool" value="positive" checked><span>+ Foreground</span></label>
+          <label><input type="radio" name="draw-tool" value="negative"><span>− Background</span></label>
+          <label><input type="radio" name="draw-tool" value="box"><span>□ Box</span></label>
+        </div>
+        <p class="helper" style="margin-top:8px">Foreground points belong to the target. Background points exclude nearby regions. Drag a box tightly around one target.</p>
+      </section>
+
+      <section class="section" aria-labelledby="keyboard-heading">
+        <h3 id="keyboard-heading" class="section-heading">Keyboard coordinate entry</h3>
+        <p class="helper">Coordinates are whole source-image pixels. Out-of-bounds values are ignored.</p>
+        <form id="point-form" class="field">
+          <span class="field-label">Add point</span>
+          <div class="coordinate-grid">
+            <div class="compact-field"><label for="point-x">X</label><input id="point-x" name="x" type="number" min="0" step="1" inputmode="numeric" required></div>
+            <div class="compact-field"><label for="point-y">Y</label><input id="point-y" name="y" type="number" min="0" step="1" inputmode="numeric" required></div>
+            <button class="compact-button" type="submit">Add</button>
+          </div>
+          <div class="segmented" role="radiogroup" aria-label="Point type">
+            <label><input type="radio" name="point-label" value="1" checked><span>Foreground · 1</span></label>
+            <label><input type="radio" name="point-label" value="0"><span>Background · 0</span></label>
+            <span aria-hidden="true"></span>
+          </div>
+        </form>
+        <form id="box-form" class="field">
+          <span class="field-label">Add box</span>
+          <div class="box-grid">
+            <div class="compact-field"><label for="box-x-min">X min</label><input id="box-x-min" name="x_min" type="number" min="0" step="1" inputmode="numeric" required></div>
+            <div class="compact-field"><label for="box-y-min">Y min</label><input id="box-y-min" name="y_min" type="number" min="0" step="1" inputmode="numeric" required></div>
+            <div class="compact-field"><label for="box-x-max">X max</label><input id="box-x-max" name="x_max" type="number" min="0" step="1" inputmode="numeric" required></div>
+            <div class="compact-field"><label for="box-y-max">Y max</label><input id="box-y-max" name="y_max" type="number" min="0" step="1" inputmode="numeric" required></div>
+            <button type="submit">Add bounding box</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section" aria-labelledby="prompt-stack-heading">
+        <div class="panel-heading" style="margin-bottom:0">
+          <h3 id="prompt-stack-heading">Current geometry</h3>
+          <span id="prompt-count" class="helper tabular">0 prompts</span>
+        </div>
+        <ul id="prompt-list" class="prompt-list"></ul>
+        <p id="prompt-empty" class="empty-copy">Click the source or enter source-pixel coordinates.</p>
+        <div class="prompt-actions">
+          <button id="undo-button" type="button" disabled>Undo</button>
+          <button id="clear-button" type="button" disabled>Clear all</button>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="mask-settings-heading">
+        <h3 id="mask-settings-heading">Spatial guidance only</h3>
+        <p class="helper">Select the target with foreground points or a box. Add background points to exclude unwanted regions. This prototype sends no text guidance.</p>
+        <div class="field">
+          <label for="max-masks">Maximum mask candidates</label>
+          <input id="max-masks" type="number" min="1" max="32" step="1" value="3" aria-describedby="max-masks-help run-explanation">
+          <p id="max-masks-help" class="helper">Candidates are alternatives, not votes or ground truth.</p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="request-heading">
+        <h3 id="request-heading">Request preview</h3>
+        <pre id="request-preview" class="json-preview" aria-label="SAM3 JSON request preview"></pre>
+        <label class="consent" for="paid-consent">
+          <input id="paid-consent" type="checkbox">
+          <span>I understand this button makes exactly one paid SAM3 request. It will not retry automatically.</span>
+        </label>
+        <button id="run-button" class="run-button" type="button" aria-describedby="run-explanation" aria-busy="false" disabled>Run SAM3 · paid, no retry</button>
+        <p id="run-explanation" class="run-explanation" aria-live="polite">Loading session availability…</p>
+      </section>
+    </aside>
+
+    <section class="panel workspace-panel" aria-labelledby="canvas-heading">
+      <div class="workspace-toolbar">
+        <div class="view-options" role="radiogroup" aria-label="Canvas image mode">
+          <h2 id="canvas-heading" style="margin-right:4px">Source canvas</h2>
+          <label><input type="radio" name="view-mode" value="source" checked> Source</label>
+          <label><input type="radio" name="view-mode" value="raw"> Provider raw</label>
+          <label><input type="radio" name="view-mode" value="mask"> Mask</label>
+          <label><input type="radio" name="view-mode" value="overlay"> Overlay</label>
+        </div>
+        <div class="zoom-controls">
+          <label for="zoom-range" class="helper">Zoom</label>
+          <input id="zoom-range" type="range" min="50" max="400" step="25" value="100">
+          <output id="zoom-readout" class="zoom-readout" for="zoom-range">100%</output>
+        </div>
+      </div>
+
+      <div id="canvas-viewport" class="canvas-viewport">
+        <div id="canvas-frame" class="canvas-frame">
+          <svg id="source-svg" tabindex="0" role="img" aria-label="Floorplan source image. Use the selected drawing tool with a pointer, or use the keyboard coordinate forms." preserveAspectRatio="xMidYMid meet">
+            <image id="source-image" class="source-image" x="0" y="0" width="0" height="0" preserveAspectRatio="none"></image>
+            <image id="result-image" class="result-image" x="0" y="0" width="0" height="0" preserveAspectRatio="none" visibility="hidden"></image>
+            <g id="prompt-overlay" aria-hidden="true"></g>
+            <g id="draft-overlay" aria-hidden="true"></g>
+          </svg>
+        </div>
+        <div id="canvas-empty" class="canvas-empty">
+          <strong>Loading inspection source</strong>
+          <span>The browser only reads the local session and source image.</span>
+        </div>
+      </div>
+
+      <div class="canvas-status">
+        <span id="canvas-message" aria-live="polite">Waiting for source dimensions…</span>
+        <span id="coordinate-readout" class="coordinate-readout">x — · y —</span>
+        <span id="stale-notice" class="stale-notice" hidden>Result is from earlier prompts</span>
+      </div>
+    </section>
+
+    <aside class="panel results-panel" aria-labelledby="runs-heading">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Saved artifacts</p>
+          <h2 id="runs-heading">Segmentation runs</h2>
+        </div>
+        <span id="run-count" class="helper tabular">0 runs</span>
+      </div>
+      <div>
+        <div id="request-notice" class="notice" role="status" aria-live="polite" hidden></div>
+        <ul id="run-list" class="run-list"></ul>
+        <p id="runs-empty" class="empty-copy">Completed and failed runs saved by this session will appear here.</p>
+      </div>
+      <section id="run-detail" aria-labelledby="run-detail-heading">
+        <h3 id="run-detail-heading">Run details</h3>
+        <p id="detail-empty" class="empty-copy">Select a saved run to inspect its mask candidates and artifacts.</p>
+        <div id="detail-content" hidden>
+          <dl id="run-metadata" class="detail-grid"></dl>
+          <div class="section">
+            <div class="panel-heading" style="margin-bottom:0">
+              <h3>Mask candidates</h3>
+              <span id="candidate-count" class="helper tabular"></span>
+            </div>
+            <ul id="candidate-list" class="candidate-list"></ul>
+            <p id="candidate-empty" class="empty-copy" hidden>No mask candidates were returned.</p>
+          </div>
+          <div id="candidate-detail" class="section" hidden>
+            <h3>Selected candidate</h3>
+            <dl id="candidate-metadata" class="detail-grid"></dl>
+            <ul id="artifact-list" class="artifact-list"></ul>
+            <ul id="warning-list" class="warning-list"></ul>
+          </div>
+          <div id="run-warning-section" class="section" hidden>
+            <h3>Run warnings</h3>
+            <ul id="run-warning-list" class="warning-list"></ul>
+          </div>
+          <div id="run-error-section" class="section" hidden>
+            <h3>Provider error</h3>
+            <p id="run-error" class="notice error" style="margin-top:8px"></p>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <section id="comparison-workbench" class="panel comparison-panel" aria-labelledby="comparison-heading">
+    <div class="comparison-heading">
+      <div class="comparison-heading-copy">
+        <p class="eyebrow">Extraction → correction → native structure</p>
+        <h2 id="comparison-heading">Comparison workbench</h2>
+        <p>Compare recorded extraction evidence, then build a read-only Pascal-native preview locally. A clean mask can still omit or misclassify structure; diagnostics and source mappings remain part of the result.</p>
+      </div>
+      <p id="comparison-status" class="notice comparison-status" role="status" aria-live="polite" aria-atomic="true">Loading recorded comparisons…</p>
+    </div>
+    <aside id="comparison-assessment" class="comparison-assessment" aria-label="Source-checked comparison assessment" hidden>
+      <div>
+        <p class="eyebrow">Recommended extractor / reviewer</p>
+        <p id="assessment-recommendation" class="assessment-recommendation"></p>
+      </div>
+      <div>
+        <p class="eyebrow">Source-check method and caveats</p>
+        <p id="assessment-method" class="assessment-method"></p>
+      </div>
+      <nav class="assessment-links" aria-label="Source-checked comparison images">
+        <a class="button-link" href="/api/comparisons/overview" target="_blank" rel="noopener">All eight overlays</a>
+        <a class="button-link" href="/api/comparisons/door-evidence" target="_blank" rel="noopener">Door-by-door comparison</a>
+      </nav>
+    </aside>
+
+    <div id="comparison-content" hidden>
+      <div id="comparison-source-meta" class="comparison-source-meta" aria-label="Comparison source metadata"></div>
+
+      <section class="section" aria-labelledby="variants-heading">
+        <div class="panel-heading" style="margin-bottom:0">
+          <div>
+            <h3 id="variants-heading">Recorded variants</h3>
+            <p class="helper">Select a row to inspect its saved overlay. Selection never starts inference or native conversion.</p>
+          </div>
+          <span id="variant-count" class="helper tabular"></span>
+        </div>
+        <div id="variants-table-wrap" class="comparison-table-wrap">
+          <table class="comparison-table">
+            <caption>Extraction and reviewer variants with model candidate counts, source-checked door evidence, unresolved evidence, and recorded usage</caption>
+            <thead>
+              <tr>
+                <th scope="col">Variant</th>
+                <th scope="col">Pipeline</th>
+                <th scope="col">Model candidate contours · wall / door / window</th>
+                <th scope="col">Unresolved flags / missing proposals</th>
+                <th id="assessment-column-heading" scope="col">Observed doors / source-checked verdict</th>
+                <th scope="col">Recorded tokens</th>
+                <th scope="col">Recorded cost / duration</th>
+              </tr>
+            </thead>
+            <tbody id="variants-table-body"></tbody>
+          </table>
+        </div>
+        <p id="variants-empty" class="empty-copy" hidden>No recorded comparison variants are available.</p>
+      </section>
+
+      <section id="selected-variant-section" class="section" aria-labelledby="selected-variant-heading" hidden>
+        <div class="selected-variant-bar">
+          <div class="selected-variant-copy">
+            <p class="eyebrow">Selected evidence</p>
+            <h3 id="selected-variant-heading">Variant</h3>
+            <p id="selected-pipeline" class="helper"></p>
+          </div>
+          <p class="helper">Read-only inspection. Nothing on this page applies nodes to a scene or mutates an authored store.</p>
+        </div>
+
+        <div class="preview-control-grid">
+          <div class="control-well">
+            <fieldset class="source-view-options">
+              <legend>Extraction evidence view</legend>
+              <label><input type="radio" name="comparison-source-view" value="source"> Original source</label>
+              <label><input type="radio" name="comparison-source-view" value="overlay" checked> Saved overlay</label>
+            </fieldset>
+            <p class="helper" style="margin-top:8px">Both views retain the original source dimensions and orientation.</p>
+            <div class="calibration-tools">
+              <div class="calibration-actions">
+                <button id="calibration-pick" type="button" aria-pressed="false">Pick two scale points</button>
+                <button id="calibration-reset" type="button">Reset scale points</button>
+              </div>
+              <div class="field"><label for="calibration-distance">Distance between points · metres</label>
+                <input id="calibration-distance" type="number" min="0.001" step="any" inputmode="decimal" placeholder="e.g. 7" aria-describedby="calibration-status">
+              </div>
+              <p id="calibration-status" class="helper" role="status">Click the endpoints of a known dimension, then enter its real distance. Current scale is uncalibrated.</p>
+              <details><summary>Enter source coordinates instead</summary>
+                <div class="calibration-points">
+                  <div class="field"><label for="calibration-x1">First point X · px</label><input id="calibration-x1" type="number" min="0" step="any"></div>
+                  <div class="field"><label for="calibration-y1">First point Y · px</label><input id="calibration-y1" type="number" min="0" step="any"></div>
+                  <div class="field"><label for="calibration-x2">Second point X · px</label><input id="calibration-x2" type="number" min="0" step="any"></div>
+                  <div class="field"><label for="calibration-y2">Second point Y · px</label><input id="calibration-y2" type="number" min="0" step="any"></div>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <form id="native-preview-form" class="control-well assumption-form" aria-describedby="preview-assumption-help preview-local-help" aria-busy="false">
+            <p class="assumption-form-title">Native preview assumptions</p>
+            <div class="field">
+              <label for="meters-per-pixel">Calculated metres per pixel</label>
+              <input id="meters-per-pixel" name="metersPerPixel" type="number" min="0.0001" max="1" step="any" value="0.015" inputmode="decimal" readonly required>
+            </div>
+            <div class="field">
+              <label for="wall-height">Wall height · metres</label>
+              <input id="wall-height" name="wallHeight" type="number" min="0.5" max="12" step="any" value="2.8" inputmode="decimal" required>
+            </div>
+            <button id="generate-native-preview" type="submit">Generate local native preview</button>
+            <p id="preview-assumption-help" class="assumption-disclaimer">Scale comes from your two measured points. Until calibrated, 0.015 m/px is an explicit assumption. Wall height is editable.</p>
+            <p id="preview-local-help" class="local-only-note">Local computation only: no paid endpoint, inference request, automatic retry, scene Apply, or authored-store mutation.</p>
+          </form>
+        </div>
+
+        <div class="comparison-view-grid">
+          <figure class="comparison-figure">
+            <div class="comparison-figure-heading">
+              <span>Extraction evidence</span>
+              <span id="evidence-view-label">Original source</span>
+            </div>
+            <div id="calibration-stage" class="comparison-image-stage" tabindex="0" role="group" aria-label="Floorplan scale picker. Enable picking, then use arrow keys to move and Enter to select each point.">
+              <img id="comparison-evidence-image" alt="" hidden>
+              <svg id="calibration-overlay" aria-hidden="true"></svg>
+              <p id="comparison-evidence-empty" class="comparison-image-empty">Choose a recorded variant to inspect its source or saved overlay.</p>
+            </div>
+            <figcaption id="evidence-caption">Original source pixels are evidence; overlays are model output, not accepted geometry.</figcaption>
+          </figure>
+
+          <figure class="comparison-figure">
+            <div class="comparison-figure-heading">
+              <div class="native-view-controls" aria-label="Native preview view">
+                <button id="native-view-2d" type="button" aria-pressed="true">2D plan</button>
+                <button id="native-view-3d" type="button" aria-pressed="false" disabled>3D room</button>
+              </div>
+              <span id="native-preview-label">Not generated</span>
+            </div>
+            <div class="comparison-image-stage">
+              <img id="native-preview-image" alt="" hidden>
+              <div id="native-3d-host" hidden></div>
+              <p id="native-preview-empty" class="comparison-image-empty">Generate a local preview to render only native nodes supported by the selected variant.</p>
+            </div>
+            <div id="native-3d-controls" hidden>
+              <div class="native-view-controls">
+                <button id="native-3d-reset" type="button">Reset camera</button>
+                <button id="native-3d-top" type="button">Top view</button>
+                <label><input id="native-3d-cutaway" type="checkbox"> Cut walls to 1.1 m · view only</label>
+              </div>
+              <p id="native-3d-status" class="helper" role="status">Drag to orbit · wheel to zoom · click a primitive to identify it.</p>
+            </div>
+            <figcaption id="native-preview-caption">No native graph has been generated for this selection. Missing-feature boxes are diagnostics, never geometry.</figcaption>
+          </figure>
+        </div>
+
+        <div class="preview-status-row">
+          <p id="native-preview-status" class="notice" role="status" aria-live="polite" aria-atomic="true">Ready for local preview generation.</p>
+          <button id="download-native-json" type="button" disabled>Download returned native JSON</button>
+        </div>
+
+        <div class="preview-ledger">
+          <section class="ledger-section" aria-labelledby="extraction-diagnostics-heading">
+            <h3 id="extraction-diagnostics-heading">Extraction diagnostics</h3>
+            <ul id="extraction-diagnostics" class="diagnostic-list"></ul>
+          </section>
+
+          <section class="ledger-section" aria-labelledby="node-counts-heading">
+            <h3 id="node-counts-heading">Native node counts</h3>
+            <p class="helper">Generated native-node totals describe converter output, not observed door locations, physical-opening totals, or reviewer accuracy.</p>
+            <p id="node-counts-empty" class="empty-copy">Generate a preview to inspect native output counts.</p>
+            <dl id="node-counts" class="node-counts" hidden></dl>
+          </section>
+        </div>
+
+        <section class="ledger-section" aria-labelledby="mappings-heading">
+          <div class="panel-heading" style="margin-bottom:0">
+            <div>
+              <h3 id="mappings-heading">Candidate → native node mappings</h3>
+              <p class="helper">Approximated structure, recovered source evidence, and unresolved regions remain explicit in the returned graph.</p>
+            </div>
+            <span id="mapping-count" class="helper tabular"></span>
+          </div>
+          <div id="mappings-table-wrap" class="comparison-table-wrap" hidden>
+            <table class="comparison-table mapping-table">
+              <caption>Mappings from selected extraction candidates to native Pascal nodes</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Source candidate</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Native node IDs</th>
+                  <th scope="col">Detail</th>
+                </tr>
+              </thead>
+              <tbody id="mappings-table-body"></tbody>
+            </table>
+          </div>
+          <p id="mappings-empty" class="empty-copy">Generate a preview to inspect source mappings.</p>
+        </section>
+
+        <div class="preview-ledger">
+          <section class="ledger-section" aria-labelledby="native-issues-heading">
+            <h3 id="native-issues-heading">Native unresolved issues</h3>
+            <ul id="native-issues" class="diagnostic-list"></ul>
+            <p id="native-issues-empty" class="empty-copy">No native preview diagnostics yet.</p>
+          </section>
+          <section class="ledger-section" aria-labelledby="native-assumptions-heading">
+            <h3 id="native-assumptions-heading">Converter assumptions</h3>
+            <ul id="native-assumptions" class="diagnostic-list"></ul>
+            <p id="native-assumptions-empty" class="empty-copy">Returned converter assumptions will appear here.</p>
+          </section>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="quality-options-heading">
+        <h3 id="quality-options-heading">Proposed workflow tiers</h3>
+        <p class="helper">Recorded planning options for comparing quality, stages, and usage—not purchase controls and not actions.</p>
+        <ul id="quality-options" class="quality-list"></ul>
+        <p id="quality-options-empty" class="empty-copy" hidden>No proposed workflow tiers were recorded.</p>
+      </section>
+
+      <section class="section" aria-labelledby="comparison-caveats-heading">
+        <h3 id="comparison-caveats-heading">Evidence caveats</h3>
+        <ul id="comparison-caveats" class="caveat-list"></ul>
+        <p id="comparison-caveats-empty" class="empty-copy" hidden>No comparison caveats were recorded.</p>
+      </section>
+    </div>
+  </section>
+
+  <script src="./app.js" defer></script>
+  <script src="./comparison.js" defer></script>
+</body>
+</html>

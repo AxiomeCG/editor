@@ -45,6 +45,7 @@ import {
   downloadEnvironmentLabReview,
   readLiveEnvironmentLabScene,
 } from '@/lib/environment-lab/review'
+import { floorplanImport } from '@/lib/floorplan-reconstruction-client'
 import { EnvironmentLabRendererProfileSlot } from './renderer-profile-slot'
 
 type RendererProfileReader = () => EnvironmentLabRendererProfile
@@ -433,6 +434,8 @@ const SIDEBAR_TABS: (SidebarTab & { component: ComponentType })[] = [
   },
 ]
 
+const SITE_PANEL_PROPS = { floorplanImport }
+
 export function EnvironmentLabEditor({ activeVariantId, labCase }: EnvironmentLabEditorProps) {
   const scratchSceneRef = useRef<SceneGraph | null>(null)
   const rendererProfileReaderRef = useRef<RendererProfileReader | null>(null)
@@ -620,6 +623,7 @@ export function EnvironmentLabEditor({ activeVariantId, labCase }: EnvironmentLa
             onSave={handleSave}
             projectId={projectId}
             sidebarTabs={SIDEBAR_TABS}
+            sitePanelProps={SITE_PANEL_PROPS}
             viewerSceneSlot={
               loadedFixture ? (
                 <EnvironmentLabRendererProfileSlot
