@@ -10,7 +10,7 @@ import {
   CommunityViewerToolbarRight,
 } from '@/components/viewer-toolbar'
 
-import { generateFloorplan } from '@/lib/floorplan-import-client'
+import { floorplanImport } from '@/lib/floorplan-reconstruction-client'
 
 // The open-source editor only ships the built-in catalog (no uploaded items),
 // so the Library/Community/Mine source chips and tag filters add nothing —
@@ -87,7 +87,7 @@ const SIDEBAR_TABS = [
 ]
 
 const PROJECT_ID = 'local-editor'
-const SITE_PANEL_PROPS = { generateFloorplan }
+const SITE_PANEL_PROPS = { floorplanImport }
 
 export default function Home() {
   return (
@@ -103,6 +103,17 @@ export default function Home() {
               href="/scenes"
             >
               Open saved scenes
+            </Link>
+            <span aria-hidden="true" className="text-border">
+              /
+            </span>
+            <Link
+              className="pointer-events-auto font-medium text-foreground hover:underline"
+              href="/environment-lab"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open Environment lab
             </Link>
           </div>
         </div>

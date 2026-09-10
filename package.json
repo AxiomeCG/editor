@@ -33,6 +33,7 @@
     "dotenv-cli": "^11.0.0",
     "turbo": "^2.9.17",
     "typescript": "6.0.3",
+    "typescript-language-server": "^6.0.0",
     "ultracite": "^7.8.2"
   },
   "engines": {
