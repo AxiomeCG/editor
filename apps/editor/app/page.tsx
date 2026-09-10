@@ -101,6 +101,17 @@ export default function Home() {
             >
               Open saved scenes
             </Link>
+            <span aria-hidden="true" className="text-border">
+              /
+            </span>
+            <Link
+              className="pointer-events-auto font-medium text-foreground hover:underline"
+              href="/environment-lab"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open Environment lab
+            </Link>
           </div>
         </div>
       )}
