@@ -32,6 +32,8 @@ import {
 export type TerrainGeometry = {
   readonly geometry: BufferGeometry
   readonly buffers: TerrainMeshBuffers
+  /** Expands during live edits; a committed-field rebuild tightens it again. */
+  readonly heightBounds: { minY: number; maxY: number }
   /** The edge curtain that closes the field against the horizon disc. */
   readonly skirt: { readonly geometry: BufferGeometry; readonly buffers: TerrainSkirtBuffers }
 }
@@ -68,7 +70,12 @@ export function createTerrainGeometry(field: TerrainField): TerrainGeometry {
   skirtGeometry.setIndex(new BufferAttribute(skirtBuffers.indices, 1))
   setSkirtBounds(skirtGeometry, field, span)
 
-  return { geometry, buffers, skirt: { geometry: skirtGeometry, buffers: skirtBuffers } }
+  return {
+    geometry,
+    buffers,
+    heightBounds: span,
+    skirt: { geometry: skirtGeometry, buffers: skirtBuffers },
+  }
 }
 
 /**
@@ -112,7 +119,20 @@ export function applyTerrainPatch(
     attribute.addUpdateRange(start, end - start)
     attribute.needsUpdate = true
   }
-  const span = heightSpan(field)
+  // Keep bounds conservative while brushing: removing an old extreme need not
+  // rescan the field, while a new extreme must become visible immediately.
+  const span = target.heightBounds
+  const col0 = Math.max(0, patch.col0)
+  const row0 = Math.max(0, patch.row0)
+  const col1 = Math.min(field.cols, patch.col0 + patch.cols)
+  const row1 = Math.min(field.rows, patch.row0 + patch.rows)
+  for (let row = row0; row < row1; row++) {
+    for (let col = col0; col < col1; col++) {
+      const height = (field.heights[row * field.cols + col] ?? 0) * field.step
+      span.minY = Math.min(span.minY, height)
+      span.maxY = Math.max(span.maxY, height)
+    }
+  }
   setTerrainBounds(target.geometry, field, span)
   setSkirtBounds(target.skirt.geometry, field, span)
 }
@@ -122,7 +142,8 @@ export function applyTerrainPatch(
  *
  * The computed version walks every vertex twice and allocates; the field's
  * horizontal extent is known in O(1) from `origin`/`spacing`/`cols`/`rows`, and
- * only the height range needs a scan. Skipping bounds entirely is not an option —
+ * the height range is scanned once, then expanded from patches. Skipping bounds
+ * entirely is not an option —
  * a stale bounding sphere gets a raised hill frustum-culled while it is still on
  * screen, which reads as terrain flickering out at certain camera angles.
  */
@@ -136,7 +157,8 @@ function setTerrainBounds(
   const maxX = minX + (field.cols - 1) * field.spacing
   const maxZ = minZ + (field.rows - 1) * field.spacing
 
-  const sphere = geometry.boundingSphere ?? (geometry.boundingSphere = new Sphere())
+  geometry.boundingSphere ??= new Sphere()
+  const sphere = geometry.boundingSphere
   sphere.center.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
   sphere.radius = Math.hypot((maxX - minX) / 2, (maxY - minY) / 2, (maxZ - minZ) / 2)
   if (geometry.boundingBox) {
@@ -166,7 +188,8 @@ function setSkirtBounds(
   const maxX = minX + (field.cols - 1) * field.spacing
   const maxZ = minZ + (field.rows - 1) * field.spacing
 
-  const sphere = geometry.boundingSphere ?? (geometry.boundingSphere = new Sphere())
+  geometry.boundingSphere ??= new Sphere()
+  const sphere = geometry.boundingSphere
   sphere.center.set((minX + maxX) / 2, (low + high) / 2, (minZ + maxZ) / 2)
   sphere.radius = Math.hypot((maxX - minX) / 2, (high - low) / 2, (maxZ - minZ) / 2)
 }
