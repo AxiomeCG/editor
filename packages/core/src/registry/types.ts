@@ -73,6 +73,9 @@ export type GeometryContext = {
   materials?: Record<SceneMaterialId, SceneMaterial>
   /** Opaque host/plugin context. Core never interprets extension values. */
   extensions?: Readonly<Record<string, unknown>>
+  /** Read-only scene snapshot for pure floor-plan builders that need to
+   *  inspect cross-kind spatial relationships such as connected ports. */
+  sceneNodes?: Readonly<Record<AnyNodeId, AnyNode>>
   /**
    * Optional view state — only populated for `def.floorplan` builders. The
    * 2D floor-plan layer surfaces selection / hover here so kinds can vary
@@ -567,6 +570,7 @@ export type FloorplanGeometry =
   | {
       kind: 'midpoint-handle'
       point: FloorplanPoint
+      activation?: 'drag' | 'action'
       affordance: string
       payload: unknown
     }
@@ -1040,6 +1044,13 @@ export type NodeDefinition<S extends ZodObject<any>> = {
    * Kinds outside any distribution system leave this unset.
    */
   distributionRole?: DistributionRole
+  /** Optional behavior while the kind's click-to-click construction tool is active. */
+  drafting?: {
+    /** Raycast architectural hosts and emit their semantic surface data with grid events. */
+    surfaceQuery?: boolean
+    /** Cancel the in-flight draft before applying an undo or redo history jump. */
+    cancelOnHistoryJump?: boolean
+  }
   /**
    * When `distributionRole` is `'fitting'`, controls whether this fitting
    * is dragged as a rigid follower when a connected run endpoint moves.
@@ -2383,8 +2394,10 @@ export type ParametricDescriptor<N> = {
    * auto-inserted elbow re-extends the duct runs it trimmed back onto the
    * corner it replaced. Called with the node and the live scene `nodes`
    * map BEFORE the deletion lands; patches targeting nodes also being
-   * deleted are ignored. Applied in the same `set` as the delete so it's
-   * one undo step. Fires only on `deleteNodes` (user-intent deletes) —
+   * deleted are ignored. `pendingDeleteIds` includes cascaded companion
+   * deletes, while `requestedDeleteIds` is the user's original selection.
+   * Applied in the same `set` as the delete so it's one undo step. Fires
+   * only on `deleteNodes` (user-intent deletes) —
    * NOT on `applyNodeChanges`, whose deletes are internal re-routes that
    * rewrite neighbours explicitly in the same batch and would fight a
    * restore.
@@ -2392,6 +2405,8 @@ export type ParametricDescriptor<N> = {
   onDelete?: (
     node: N,
     nodes: Record<AnyNodeId, AnyNode>,
+    pendingDeleteIds: ReadonlySet<AnyNodeId>,
+    requestedDeleteIds: ReadonlySet<AnyNodeId>,
   ) => Array<{ id: AnyNodeId; data: Partial<AnyNode> }>
   /**
    * Companion deletes that should be folded into the same user-intent delete
@@ -2400,12 +2415,14 @@ export type ParametricDescriptor<N> = {
    * deletion; returned ids are recursively expanded through the normal
    * descendant cascade. `pendingDeleteIds` holds every id already part of
    * the gesture so "would my parent become empty?" checks see sibling
-   * deletes from the same multi-select.
+   * deletes from the same multi-select. `requestedDeleteIds` remains the
+   * original selection while the pending set expands.
    */
   onDeleteCascade?: (
     node: N,
     nodes: Record<AnyNodeId, AnyNode>,
     pendingDeleteIds: ReadonlySet<AnyNodeId>,
+    requestedDeleteIds: ReadonlySet<AnyNodeId>,
   ) => AnyNodeId[]
   customPanel?: () => Promise<{ default: ComponentType<{ node: N }> }>
   /**

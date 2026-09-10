@@ -30,9 +30,11 @@ import { backdropGradient, deepSkyColor, horizonHazeColor } from '../../lib/back
 import { edgeColorFor, edgeOpacityScaleFor } from '../../lib/edge-style'
 import { PERF_OVERLAY_ENABLED } from '../../lib/gpu-perf'
 import { inkedEdges } from '../../lib/ink-edges'
+import { LayerPassIndex, LayerPassNode } from '../../lib/layer-pass'
 import { GRID_LAYER, OVERLAY_LAYER, SCENE_LAYER, ZONE_LAYER } from '../../lib/layers'
 import { mergedOutline } from '../../lib/merged-outline-node'
 import { recordPerfSample, timeSpan } from '../../lib/perf-tracks'
+import { PostProcessingResources } from '../../lib/post-processing-resources'
 import { getSceneTheme } from '../../lib/scene-themes'
 import { packNormalToRGB, unpackRGBToNormal } from '../../lib/tsl-compat'
 import useViewer from '../../store/use-viewer'
@@ -200,12 +202,13 @@ const PostProcessingPasses = ({
   disablePostFx?: boolean
 }) => {
   const { gl: renderer, invalidate, scene, camera, size } = useThree()
+  const resourcesRef = useRef<PostProcessingResources | null>(null)
   const atmosphere = useSceneAtmosphere()
   const directSkyNode = useMemo(
     () => (atmosphere ? atmosphere.skyRadiance(normalWorldGeometry) : null),
     [atmosphere],
   )
-  const renderPipelineRef = useRef<RenderPipeline | null>(null)
+
   const hasPipelineErrorRef = useRef(false)
   const retryCountRef = useRef(0)
   const rebuildTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -296,8 +299,8 @@ const PostProcessingPasses = ({
   }, [])
 
   const disposePipeline = useCallback(() => {
-    renderPipelineRef.current?.dispose()
-    renderPipelineRef.current = null
+    resourcesRef.current?.dispose()
+    resourcesRef.current = null
   }, [])
 
   // Reset retry state when project changes
@@ -411,7 +414,7 @@ const PostProcessingPasses = ({
     const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator
     if (!hasWebGPU) {
       hasPipelineErrorRef.current = true
-      renderPipelineRef.current = null
+      resourcesRef.current = null
       return
     }
 
@@ -423,15 +426,22 @@ const PostProcessingPasses = ({
     outliner.selectedObjects.length = 0
     outliner.hoveredObjects.length = 0
 
+    const resources = new PostProcessingResources()
+    resourcesRef.current = resources
     try {
+      const layerIndex = new LayerPassIndex(scene, [ZONE_LAYER, OVERLAY_LAYER])
+      resources.layerIndex = layerIndex
       const scenePass = pass(scene, camera)
+      resources.passes.push(scenePass)
       scenePass.setLayers(sceneOnlyLayers)
-      const zonePass = pass(scene, camera)
+      const zonePass = new LayerPassNode(layerIndex, camera, ZONE_LAYER, scenePass)
+      resources.passes.push(zonePass)
       zonePass.setLayers(zoneLayers)
       // Editor overlays (gizmos, move handles, tool previews, grid) on their own
       // layer, kept out of the depth/normal MRT above so the ink + SSGI ignore
       // them, then composited on top of the final image below.
-      const overlayPass = pass(scene, camera)
+      const overlayPass = new LayerPassNode(layerIndex, camera, OVERLAY_LAYER, scenePass)
+      resources.passes.push(overlayPass)
       overlayPass.setLayers(overlayLayers)
       const overlayColor = overlayPass.getTextureNode('output')
 
@@ -452,7 +462,10 @@ const PostProcessingPasses = ({
         contentAlpha,
       ) as unknown as ReturnType<typeof vec4>
 
-      // Depth + normal MRT — shared by SSGI and screen-space ink.
+      // Scene depth is shared by SSGI, ink, and outlines.
+      // The normal MRT is only built when SSGI or ink needs it.
+      const scenePassDepth = scenePass.getTextureNode('depth')
+      let scenePassNormal: any = null
       if (needsNormalMRT) {
         scenePass.setMRT(
           mrt({
@@ -461,9 +474,8 @@ const PostProcessingPasses = ({
             normal: packNormalToRGB(normalView),
           }),
         )
+        scenePassNormal = scenePass.getTextureNode('normal')
       }
-      const scenePassDepth = needsNormalMRT ? scenePass.getTextureNode('depth') : null
-      const scenePassNormal = needsNormalMRT ? scenePass.getTextureNode('normal') : null
       if (scenePassNormal) {
         const normalTexture = scenePass.getTexture('normal')
         normalTexture.type = UnsignedByteType
@@ -561,17 +573,21 @@ const PostProcessingPasses = ({
         sceneColor = vec4(gradeRgb(sceneColor.rgb), sceneColor.a)
       }
 
-      // Single merged outline node: one shared depth pass for both selected + hovered groups.
+      // Reused scene depth lets outlined groups occlude each other; materials
+      // with depthWrite=false (including glazing) no longer occlude outlines.
       const outliner = useViewer.getState().outliner
       let compositeWithOutlines = sceneColor
       let visualAlpha = contentAlpha
       if (outlineEnabled) {
         const outlineNode = mergedOutline(scene, camera, {
+          sceneDepthNode: scenePassDepth,
           primaryObjects: outliner.selectedObjects,
           secondaryObjects: outliner.hoveredObjects,
           primaryEdgeThickness: uniform(1),
           secondaryEdgeThickness: uniform(1.5),
         })
+
+        resources.outline = outlineNode
 
         // Selected: white visible, yellow hidden
         const selectedVisibleColor = uniform(new Color(0xff_ff_ff))
@@ -647,9 +663,9 @@ const PostProcessingPasses = ({
       }
 
       const renderPipeline = new RenderPipeline(renderer as unknown as WebGPURenderer)
+      resources.pipeline = renderPipeline
       renderPipeline.outputColorTransform = !transparentBackground
       renderPipeline.outputNode = finalOutput
-      renderPipelineRef.current = renderPipeline
       retryCountRef.current = 0
     } catch (error) {
       hasPipelineErrorRef.current = true
@@ -747,7 +763,7 @@ const PostProcessingPasses = ({
       disablePostFx ||
       PERF_POST_FX_DISABLED ||
       hasPipelineErrorRef.current ||
-      !renderPipelineRef.current
+      !resourcesRef.current?.pipeline
     ) {
       const previousBackgroundNode = scene.backgroundNode
       if (directSkyNode && !transparentBackground) scene.backgroundNode = directSkyNode
@@ -771,7 +787,7 @@ const PostProcessingPasses = ({
       return
     }
 
-    const pipeline = renderPipelineRef.current
+    const pipeline = resourcesRef.current.pipeline
     try {
       // Clear alpha=0 so background pixels in the output MRT attachment (index 0) get a=0,
       // making scenePassColor.a a reliable geometry mask (geometry pixels write a=1 via output node).

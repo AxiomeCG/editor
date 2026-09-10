@@ -112,6 +112,7 @@ export {
   isIsolationActive,
 } from './lib/isolation'
 export { configureKtx2Support, ensureKtx2Support } from './lib/ktx2-loader'
+export { LayerPassIndex } from './lib/layer-pass'
 export {
   BATCHED_LAYER,
   GRID_LAYER,
@@ -145,6 +146,7 @@ export {
   MONO_PALETTE,
   PRESET_PALETTES,
   type RenderShading,
+  registerMaterialCacheCleanup,
   resolveMaterialRef,
   resolveSlotDefaultMaterial,
   resolveSurfaceColor,
@@ -154,6 +156,7 @@ export { mergedOutline } from './lib/merged-outline-node'
 export * from './lib/perf-actions'
 export { type PerfBatchStats, publishPerfBatchStats } from './lib/perf-panel-store'
 export * from './lib/perf-tracks'
+export { markPureRaycast } from './lib/pointer-events'
 export {
   detectRendererCapability,
   initializeGpuRenderer,

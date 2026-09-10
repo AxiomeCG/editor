@@ -32,6 +32,7 @@ import {
   createMaterial,
   createMaterialFromPresetRef,
   getRoofMaterialArray,
+  registerMaterialCacheCleanup,
   useViewer,
 } from '@pascal-app/viewer'
 import { useThree } from '@react-three/fiber'
@@ -55,6 +56,11 @@ import {
   hasActivePaintMaterial,
   resolveActivePaintMaterialFromSelection,
 } from '../../lib/material-paint'
+import {
+  combinePaintPreviews,
+  createPaintPreviewOwner,
+  type PaintPreviewCleanup,
+} from '../../lib/paint-preview-owner'
 import {
   availablePaintScopes,
   commitPaintScopeFanout,
@@ -116,8 +122,6 @@ type SelectableNodeType =
   | 'spawn'
   | 'window'
   | 'door'
-
-type PaintPreviewCleanup = () => void
 
 type PaintInteraction = {
   key: string
@@ -810,6 +814,7 @@ export const SelectionManager = () => {
     if (mode !== 'material-paint') return
     if (movingNode || isCurveReshape) return
 
+    const previewOwner = createPaintPreviewOwner()
     let activePreview: { key: string; restore: PaintPreviewCleanup } | null = null
     // The last hover event, replayed when the application scope cycles so the
     // preview + chip update under a stationary cursor (Shift fires no pointer move).
@@ -831,7 +836,7 @@ export const SelectionManager = () => {
         selectedMaterialTarget: useEditor.getState().selectedMaterialTarget,
       })
 
-    const getPaintInteraction = (event: NodeEvent): PaintInteraction | null => {
+    const resolvePaintInteraction = (event: NodeEvent): PaintInteraction | null => {
       const eraser = useEditor.getState().paintEraser
       const activePaintMaterial = resolveActivePaintMaterial()
       const node = event.node
@@ -954,27 +959,29 @@ export const SelectionManager = () => {
                   // paint capability builds the preview; restores combine.
                   const restores: PaintPreviewCleanup[] = []
                   const sceneNodes = useScene.getState().nodes
-                  for (const target of scopeTargets) {
-                    const targetNode = sceneNodes[target.nodeId]
-                    const targetRoot = getRegisteredNodeObject(target.nodeId)
-                    const targetCap = targetNode
-                      ? nodeRegistry.get(targetNode.type)?.capabilities?.paint
-                      : null
-                    if (!(targetNode && targetRoot && targetCap)) continue
-                    const restore = targetCap.applyPreview({
-                      node: targetNode,
-                      role: target.role,
-                      material: paintSpec.material,
-                      materialPreset: paintSpec.materialPreset,
-                      root: targetRoot,
-                    })
-                    if (restore) restores.push(restore)
+                  try {
+                    for (const target of scopeTargets) {
+                      const targetNode = sceneNodes[target.nodeId]
+                      const targetRoot = getRegisteredNodeObject(target.nodeId)
+                      const targetCap = targetNode
+                        ? nodeRegistry.get(targetNode.type)?.capabilities?.paint
+                        : null
+                      if (!(targetNode && targetRoot && targetCap)) continue
+                      const restore = targetCap.applyPreview({
+                        node: targetNode,
+                        role: target.role,
+                        material: paintSpec.material,
+                        materialPreset: paintSpec.materialPreset,
+                        root: targetRoot,
+                      })
+                      if (restore) restores.push(restore)
+                    }
+                  } catch (error) {
+                    combinePaintPreviews(restores)()
+                    throw error
                   }
                   if (restores.length === 0) return null
-                  return () => {
-                    for (let index = restores.length - 1; index >= 0; index -= 1)
-                      restores[index]?.()
-                  }
+                  return combinePaintPreviews(restores)
                 }
               : () => previewCursor('not-allowed'),
         }
@@ -1073,6 +1080,9 @@ export const SelectionManager = () => {
 
       return null
     }
+
+    const getPaintInteraction = (event: NodeEvent) =>
+      previewOwner.wrap(resolvePaintInteraction(event))
 
     const onEnter = (event: NodeEvent) => {
       // A host-driven drag (handle resize/rotate) sets `inputDragging`.
@@ -2284,7 +2294,7 @@ const SelectionMaterialSync = () => {
   }, [])
 
   useEffect(() => {
-    return () => {
+    const clearHighlights = () => {
       for (const [mesh, entry] of highlightedMaterialsRef.current.entries()) {
         if (mesh.material === entry.highlightedMaterial) {
           mesh.material = entry.originalMaterial
@@ -2293,6 +2303,11 @@ const SelectionMaterialSync = () => {
       }
 
       highlightedMaterialsRef.current.clear()
+    }
+    const unsubscribe = registerMaterialCacheCleanup(clearHighlights)
+    return () => {
+      unsubscribe()
+      clearHighlights()
     }
   }, [])
 

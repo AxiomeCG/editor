@@ -19,9 +19,7 @@ import { streetscapeHostPanel, streetscapePlugin } from '@pascal-app/plugin-stre
 import { treesHostPanel, treesPlugin } from '@pascal-app/plugin-trees'
 import { registerViewerPresentation } from '@pascal-app/viewer'
 
-// Idempotency guards: HMR can reload this module, but `registerNode`
-// throws on duplicate kinds. Flags live in the module closure so they
-// reset on a hard reload but survive within a session.
+// Each module evaluation loads builtins once; development reloads replace stale definitions.
 let builtinsLoaded = false
 let externalsKickedOff = false
 
@@ -47,10 +45,7 @@ function loadBuiltinsSync(): void {
   if (builtinsLoaded) return
   builtinsLoaded = true
   for (const def of builtinPlugin.nodes ?? []) {
-    // Skip kinds the registry already has. The module-closure flag
-    // above resets on HMR, but the registry singleton (in @pascal-app/core)
-    // persists — without this guard we'd throw on the first duplicate.
-    if (nodeRegistry.has((def as AnyNodeDefinition).kind)) continue
+    if (nodeRegistry.has((def as AnyNodeDefinition).kind) && !isDev()) continue
     registerNode(def as AnyNodeDefinition)
   }
 
