@@ -4565,7 +4565,7 @@ function FloorplanDraftCursorLayer({
       )}
 
       {cursorPoint && (
-        <g>
+        <g pointerEvents="none">
           <circle
             cx={toSvgX(cursorPoint[0])}
             cy={toSvgY(cursorPoint[1])}
