@@ -10,8 +10,6 @@ import {
   CommunityViewerToolbarRight,
 } from '@/components/viewer-toolbar'
 
-import { floorplanImport } from '@/lib/floorplan-reconstruction-client'
-
 // The open-source editor only ships the built-in catalog (no uploaded items),
 // so the Library/Community/Mine source chips and tag filters add nothing —
 // drop them and keep the panel to plain categories.
@@ -87,7 +85,6 @@ const SIDEBAR_TABS = [
 ]
 
 const PROJECT_ID = 'local-editor'
-const SITE_PANEL_PROPS = { floorplanImport }
 
 export default function Home() {
   return (
@@ -122,7 +119,6 @@ export default function Home() {
         layoutVersion="v2"
         projectId={PROJECT_ID}
         sidebarTabs={SIDEBAR_TABS}
-        sitePanelProps={SITE_PANEL_PROPS}
         viewerToolbarLeft={<CommunityViewerToolbarLeft />}
         viewerToolbarRight={<CommunityViewerToolbarRight />}
       />

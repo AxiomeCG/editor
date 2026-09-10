@@ -28,7 +28,7 @@ import {
   useScene,
 } from '@pascal-app/core'
 import { markPerfAction, useViewer } from '@pascal-app/viewer'
-import { ClipboardPaste, Copy, FileImage, GripVertical, MoreVertical, Plus, Trash2 } from 'lucide-react'
+import { ClipboardPaste, Copy, GripVertical, MoreVertical, Plus, Trash2 } from 'lucide-react'
 import {
   type ButtonHTMLAttributes,
   type CSSProperties,
@@ -47,9 +47,6 @@ import { getDefaultLevelName, getLevelDisplayName } from '@pascal-app/core'
 import { deleteLevelWithFallbackSelection } from '../../lib/level-selection'
 import { useLinearDisplay } from '../../lib/use-linear-display'
 import { cn } from '../../lib/utils'
-import { captureFloorplanTarget, type FloorplanTarget } from '../../lib/floorplan-import/native'
-import type { FloorplanImportProvider } from '../../lib/floorplan-import/curated'
-import { FloorplanImportDialog } from './floorplan-import-dialog'
 import { ActionButton } from './controls/action-button'
 import { SliderControl } from './controls/slider-control'
 import { LevelDuplicateDialog } from './level-duplicate-dialog'
@@ -134,7 +131,6 @@ function LevelRow({
   onDuplicate,
   onPaste,
   onRequestDelete,
-  floorplanImport,
 }: {
   level: LevelNode
   isSelected: boolean
@@ -145,15 +141,9 @@ function LevelRow({
   onDuplicate: (preset?: LevelDuplicatePreset) => void
   onPaste?: () => void
   onRequestDelete: () => void
-  floorplanImport?: FloorplanImportProvider
 }) {
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
-  const [levelMenuOpen, setLevelMenuOpen] = useState(false)
-  const [floorplanDialogOpen, setFloorplanDialogOpen] = useState(false)
-  const [floorplanTarget, setFloorplanTarget] = useState<FloorplanTarget | null>(null)
-  const [floorplanTargetError, setFloorplanTargetError] = useState<string | null>(null)
-  const levelMenuTriggerRef = useRef<HTMLButtonElement>(null)
   const updateNode = useScene((s) => s.updateNode)
   const { isImperial, toDisplay, displayUnit } = useLinearDisplay('m', 2)
 
@@ -270,40 +260,17 @@ function LevelRow({
           </Popover>
 
           {/* Vertical three-dot menu — inside the pill */}
-          <Popover onOpenChange={setLevelMenuOpen} open={levelMenuOpen}>
+          <Popover>
             <PopoverTrigger asChild>
               <button
-                aria-label={`Actions for ${getLevelDisplayName(level)}`}
-                className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/level:opacity-100"
-                ref={levelMenuTriggerRef}
+                className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground group-hover/level:opacity-100"
                 onClick={(e) => e.stopPropagation()}
                 type="button"
               >
-                <MoreVertical aria-hidden="true" className="h-3 w-3" />
+                <MoreVertical className="h-3 w-3" />
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-44 p-1" side="right" sideOffset={8}>
-              <button
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted-foreground text-xs transition-colors hover:bg-white/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  try {
-                    setFloorplanTarget(captureFloorplanTarget(level.id))
-                    setFloorplanTargetError(null)
-                  } catch (error) {
-                    setFloorplanTarget(null)
-                    setFloorplanTargetError(error instanceof Error
-                      ? error.message
-                      : 'This floor cannot be imported. Create an empty floor and try again.')
-                  }
-                  setLevelMenuOpen(false)
-                  setFloorplanDialogOpen(true)
-                }}
-                type="button"
-              >
-                <FileImage aria-hidden="true" className="h-3 w-3" />
-                Import from floorplan…
-              </button>
               <button
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted-foreground text-xs transition-colors hover:bg-white/10 hover:text-foreground"
                 onClick={(e) => {
@@ -365,18 +332,6 @@ function LevelRow({
         onOpenChange={setDuplicateDialogOpen}
         open={duplicateDialogOpen}
       />
-      {floorplanDialogOpen && (
-        <FloorplanImportDialog
-          floorplanImport={floorplanImport}
-          level={level}
-          onApplied={onSelect}
-          onOpenChange={setFloorplanDialogOpen}
-          open={floorplanDialogOpen}
-          restoreFocusRef={levelMenuTriggerRef}
-          target={floorplanTarget}
-          targetError={floorplanTargetError}
-        />
-      )}
     </div>
   )
 }
@@ -388,7 +343,6 @@ function SortableLevelRow({
   onDuplicate,
   onPaste,
   onRequestDelete,
-  floorplanImport,
 }: {
   level: LevelNode
   isSelected: boolean
@@ -396,7 +350,6 @@ function SortableLevelRow({
   onDuplicate: (preset?: LevelDuplicatePreset) => void
   onPaste?: () => void
   onRequestDelete: () => void
-  floorplanImport?: FloorplanImportProvider
 }) {
   const {
     attributes,
@@ -421,7 +374,6 @@ function SortableLevelRow({
       <LevelRow
         dragHandleProps={{ ...attributes, ...listeners }}
         dragHandleRef={setActivatorNodeRef}
-        floorplanImport={floorplanImport}
         isDragging={isDragging}
         isSelected={isSelected}
         level={level}
@@ -436,7 +388,7 @@ function SortableLevelRow({
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export function FloatingLevelSelector({ floorplanImport }: { floorplanImport?: FloorplanImportProvider } = {}) {
+export function FloatingLevelSelector() {
   const selectedBuildingId = useViewer((s) => s.selection.buildingId)
   const levelId = useViewer((s) => s.selection.levelId)
   const setSelection = useViewer((s) => s.setSelection)
@@ -674,7 +626,6 @@ export function FloatingLevelSelector({ floorplanImport }: { floorplanImport?: F
                       key={level.id}
                     >
                       <SortableLevelRow
-                        floorplanImport={floorplanImport}
                         isSelected={isSelected}
                         level={level}
                         onDuplicate={(preset) => handleDuplicateLevel(level, preset)}

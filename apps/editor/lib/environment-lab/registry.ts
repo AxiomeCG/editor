@@ -17,9 +17,9 @@ export async function waitForEnvironmentRegistry(): Promise<void> {
   const startedAt = performance.now()
   let missing = ENVIRONMENT_KINDS.filter((kind) => !nodeRegistry.has(kind))
   while (missing.length > 0 && performance.now() - startedAt < REGISTRY_WAIT_LIMIT_MS) {
-    const { promise, resolve } = Promise.withResolvers<void>()
-    window.setTimeout(resolve, REGISTRY_POLL_INTERVAL_MS)
-    await promise
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, REGISTRY_POLL_INTERVAL_MS)
+    })
     missing = ENVIRONMENT_KINDS.filter((kind) => !nodeRegistry.has(kind))
   }
 

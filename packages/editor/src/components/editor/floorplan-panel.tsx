@@ -123,7 +123,6 @@ import { FloorplanAlignmentGuideLayer } from '../editor-2d/floorplan-alignment-g
 import { FloorplanCursorIndicatorOverlay as Editor2dFloorplanCursorIndicatorOverlay } from '../editor-2d/floorplan-cursor-indicator-overlay'
 import { FloorplanGroupActionMenu } from '../editor-2d/floorplan-group-action-menu'
 import { FloorplanSiteKeyHandler } from '../editor-2d/floorplan-hotkey-handlers'
-import { FloorplanImportPlacement2D } from '../editor-2d/floorplan-import-placement'
 import { FloorplanMeasurementToolLayer } from '../editor-2d/floorplan-measurement-tool-layer'
 import { FloorplanRegisteredToolLayer } from '../editor-2d/floorplan-registered-tool-layer'
 import { FloorplanRegistryActionMenu } from '../editor-2d/floorplan-registry-action-menu'
@@ -11474,7 +11473,6 @@ export function FloorplanPanel({
                       them without a frame of overlap. See
                       `floorplan-wall-move-ghost-layer.tsx`. */}
                   <FloorplanWallMoveGhostLayer />
-                  <FloorplanImportPlacement2D />
                 </g>
                 <FloorplanMeasurementToolLayer />
                 <FloorplanRegisteredToolLayer />
