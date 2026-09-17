@@ -13,6 +13,7 @@ import { memo, useCallback, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { ColorDot } from './../../../../../components/ui/primitives/color-dot'
 import { assignZoneToUnit, enterUnitFocus } from './../../../../../lib/units'
+import { MirrorAction } from '../../../../editor/mirror-action'
 import { InlineRenameInput } from './inline-rename-input'
 import { routeTreeSelectionToNode, TreeNodeWrapper } from './tree-node'
 
@@ -158,6 +159,7 @@ export const UnitTreeNode = memo(function UnitTreeNode({
   return (
     <TreeNodeWrapper
       actions={
+        <><MirrorAction ids={[unitId]} className={ACTION_BUTTON_CLASS} />
         <button
           className={ACTION_BUTTON_CLASS}
           onClick={(event) => {
@@ -168,7 +170,7 @@ export const UnitTreeNode = memo(function UnitTreeNode({
           type="button"
         >
           <Trash2 className="h-3 w-3" />
-        </button>
+        </button></>
       }
       depth={depth}
       expanded={expanded}

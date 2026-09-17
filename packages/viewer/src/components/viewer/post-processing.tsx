@@ -755,8 +755,8 @@ const PostProcessingPasses = ({
     inkColorUniform.current.value.set(edgeColorFor(bgHex))
     inkOpacityScaleUniform.current.value = edgeOpacityScaleFor(bgHex)
 
-    const outliner = useViewer.getState().outliner
     const restoreAtmosphere = refreshIsolation(scene)
+    const outliner = useViewer.getState().outliner
     sanitizeOutlineObjects(outliner.selectedObjects)
     sanitizeOutlineObjects(outliner.hoveredObjects)
 

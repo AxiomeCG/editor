@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { cloneLevelSubtree } from '@pascal-app/core/clone-scene-graph'
-import type { AnyNode, AnyNodeId } from '@pascal-app/core/schema'
+import { buildLevelDuplicateCreateOps } from '@pascal-app/core/building'
+import type { AnyNodeId, LevelNode } from '@pascal-app/core/schema'
 import { z } from 'zod'
 import type { Patch as BridgePatch } from '../bridge/scene-bridge'
 import type { SceneOperations } from '../operations'
@@ -25,7 +25,7 @@ export function registerDuplicateLevel(server: McpServer, bridge: SceneOperation
     {
       title: 'Duplicate level',
       description:
-        'Clone a level and all its descendants into a new subtree attached to the same building.',
+        'Insert a copy above a level in the same building, including its units and building elements. Shift higher floors and update clear floor-based unit numbers. Reference images, scans and spawn points are excluded.',
       inputSchema: duplicateLevelInput,
       outputSchema: duplicateLevelOutput,
       annotations: ADDITIVE_TOOL_ANNOTATIONS,
@@ -39,27 +39,27 @@ export function registerDuplicateLevel(server: McpServer, bridge: SceneOperation
         throwMcpError(ErrorCode.InvalidParams, `Node ${levelId} is a ${node.type}, expected level`)
       }
 
-      // cloneLevelSubtree(nodes, levelId) — returns { clonedNodes, newLevelId, idMap }.
-      const { clonedNodes, newLevelId } = cloneLevelSubtree(bridge.getNodes(), levelId as AnyNodeId)
-
-      const buildingId = (node.parentId as AnyNodeId | null) ?? undefined
-
-      // Flatten cloned subtree into create patches. The level node itself
-      // attaches to the original building; descendants attach to their
-      // already-remapped parent (encoded in `parentId`).
-      const patches: BridgePatch[] = clonedNodes.map((n) => {
-        const isRoot = (n.id as AnyNodeId) === newLevelId
-        const parentIdForBridge = isRoot
-          ? buildingId
-          : ((n.parentId as AnyNodeId | null) ?? undefined)
-
-        const createOp: BridgePatch = {
-          op: 'create',
-          node: n as AnyNode,
-          ...(parentIdForBridge !== undefined ? { parentId: parentIdForBridge } : {}),
-        }
-        return createOp
+      const nodes = bridge.getNodes()
+      const { createOps, newLevelId, shiftedLevels } = buildLevelDuplicateCreateOps({
+        nodes,
+        level: node,
+        levels: Object.values(nodes).filter(
+          (n): n is LevelNode => n.type === 'level' && n.parentId === node.parentId,
+        ),
+        preset: 'everything',
       })
+      const patches: BridgePatch[] = [
+        ...shiftedLevels.map((level) => ({
+          op: 'update' as const,
+          id: level.id,
+          data: { level: level.level },
+        })),
+        ...createOps.map(({ node, parentId }) => ({
+          op: 'create' as const,
+          node,
+          ...(parentId ? { parentId } : {}),
+        })),
+      ]
 
       const result = bridge.applyPatch(patches)
       const persistence = await publishLiveSceneSnapshot(bridge, 'duplicate_level')

@@ -3,8 +3,9 @@
 import { nodeRegistry, type ToolOption } from '@pascal-app/core'
 import Image from 'next/image'
 import { useSyncExternalStore } from 'react'
-import { cn } from '../../../lib/utils'
 import { triggerSFX } from '../../../lib/sfx-bus'
+import { cn } from '../../../lib/utils'
+import { IconRefGlyph } from '../icon-ref'
 
 const ALWAYS_VISIBLE = {
   subscribe: () => () => {},
@@ -28,17 +29,32 @@ function ToolOptionRow({
   if (
     !visible ||
     (!active && !option.choices.some((choice) => getChoiceThumbnail?.(option, choice.value)))
-  ) return null
+  )
+    return null
 
   const activeChoice = active && option.choices.find((choice) => choice.value === value)
+  const iconOnly = option.choices.every(
+    (choice) => choice.icon && !getChoiceThumbnail?.(option, choice.value),
+  )
   return (
-    <div className="flex flex-col gap-2">
-      <div className="px-0.5 font-medium text-muted-foreground text-xs">{option.label}</div>
+    <div className={cn('flex gap-2', iconOnly ? 'items-center justify-between' : 'flex-col')}>
       <div
-        className="grid gap-1.5"
-        style={{
-          gridTemplateColumns: `repeat(${Math.min(option.choices.length, 3)}, minmax(0, 1fr))`,
-        }}
+        className="px-0.5 font-medium text-muted-foreground text-xs"
+        title={iconOnly && activeChoice ? activeChoice.description : undefined}
+      >
+        {option.label}
+      </div>
+      <div
+        className={iconOnly ? 'flex gap-1 rounded-lg bg-muted/40 p-1' : 'grid gap-1.5'}
+        role="group"
+        aria-label={option.label}
+        style={
+          iconOnly
+            ? undefined
+            : {
+                gridTemplateColumns: `repeat(${Math.min(option.choices.length, 3)}, minmax(0, 1fr))`,
+              }
+        }
       >
         {option.choices.map((choice) => {
           const selected = active && choice.value === value
@@ -46,8 +62,11 @@ function ToolOptionRow({
           return (
             <button
               aria-pressed={selected}
+              aria-label={choice.label}
+              title={choice.description ? `${choice.label} — ${choice.description}` : choice.label}
               className={cn(
-                'rounded-lg px-2 py-2 text-center font-medium text-xs transition-colors',
+                'rounded-lg px-2 py-2 text-center font-medium text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-[0.97] motion-reduce:active:scale-100',
+                iconOnly && 'flex size-9 items-center justify-center rounded-md',
                 selected
                   ? 'bg-primary/10 text-primary ring-1 ring-primary/50'
                   : 'bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -73,12 +92,16 @@ function ToolOptionRow({
                   width={56}
                 />
               )}
-              {choice.label}
+              {choice.icon && !thumbnail ? (
+                <IconRefGlyph icon={choice.icon} size={18} />
+              ) : (
+                choice.label
+              )}
             </button>
           )
         })}
       </div>
-      {activeChoice && activeChoice.description ? (
+      {!iconOnly && activeChoice && activeChoice.description ? (
         <p className="px-0.5 text-[11px] text-muted-foreground leading-relaxed">
           {activeChoice.description}
         </p>

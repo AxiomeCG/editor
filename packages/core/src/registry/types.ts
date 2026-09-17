@@ -395,6 +395,7 @@ export type ToolOptionChoice = {
   value: string
   /** Button label. Sentence case. */
   label: string
+  icon?: IconRef
   /** Helper line shown under the row while this choice is active. */
   description?: string
 }

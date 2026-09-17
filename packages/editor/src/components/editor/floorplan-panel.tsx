@@ -1,5 +1,6 @@
 'use client'
 
+import { FloorplanImportPlacement2D } from '../editor-2d/floorplan-import-placement'
 import { Icon } from '@iconify/react'
 import {
   type AnyNode,
@@ -4570,7 +4571,7 @@ function FloorplanDraftCursorLayer({
       )}
 
       {cursorPoint && (
-        <g>
+        <g pointerEvents="none">
           <circle
             cx={toSvgX(cursorPoint[0])}
             cy={toSvgY(cursorPoint[1])}
@@ -11513,6 +11514,7 @@ export function FloorplanPanel({
                       them without a frame of overlap. See
                       `floorplan-wall-move-ghost-layer.tsx`. */}
                   <FloorplanWallMoveGhostLayer />
+                  <FloorplanImportPlacement2D />
                 </g>
                 <FloorplanMeasurementToolLayer />
                 <FloorplanRegisteredToolLayer />

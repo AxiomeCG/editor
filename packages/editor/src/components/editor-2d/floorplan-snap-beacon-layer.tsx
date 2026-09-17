@@ -2,6 +2,7 @@
 
 import { useWallSnapIndicator, type WallSnapKind } from '@pascal-app/editor'
 import { memo } from 'react'
+import { FloorplanWallSplitLayer } from './floorplan-wall-split-layer'
 import { useFloorplanRender } from './floorplan-render-context'
 
 /**
@@ -27,7 +28,7 @@ export const FloorplanSnapBeaconLayer = memo(function FloorplanSnapBeaconLayer()
   const point = useWallSnapIndicator((s) => s.point)
   const ctx = useFloorplanRender()
 
-  if (!point) return null
+  if (!point) return <FloorplanWallSplitLayer />
 
   const upp = ctx?.unitsPerPixel ?? 0.01
   const m = 6 * upp // base half-size of the glyph in world meters
@@ -35,6 +36,7 @@ export const FloorplanSnapBeaconLayer = memo(function FloorplanSnapBeaconLayer()
 
   return (
     <g pointerEvents="none">
+      <FloorplanWallSplitLayer />
       <SnapMarker color={COLOR} kind={point.kind} m={m} stroke={stroke} x={point.x} z={point.z} />
     </g>
   )

@@ -353,7 +353,15 @@ export function hasWallChildOverlap(
   for (const childId of Array.isArray(wallNode.children) ? wallNode.children : []) {
     if (childId === ignoreId) continue
     const child = nodes[childId as AnyNodeId]
-    if (!child) continue
+    if (!child || child.metadata.isTransient) continue
+    // A moving array source carries its own linked openings along with it.
+    // Independent (made-real) windows still block placement normally.
+    if (
+      ignoreId &&
+      (child.metadata.linkedArray as { sourceRootId?: string } | undefined)?.sourceRootId ===
+        ignoreId
+    )
+      continue
 
     let childLeft: number
     let childRight: number

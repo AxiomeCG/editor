@@ -487,6 +487,9 @@ export {
 export type { SceneGraph } from './utils/clone-scene-graph'
 export { cloneLevelSubtree, cloneSceneGraph, forkSceneGraph } from './utils/clone-scene-graph'
 export { isObject } from './utils/types'
+export { linearArray, indexRepetitions, reconcileRepetitions, remapRepeatedReferences } from './utils/repetition'
+export type { RepeatOffset, RepeatPlacement, RepetitionPlan } from './utils/repetition'
+export { applyNodeRepetition, releaseNodeRepetition } from './utils/repetition-nodes'
 export {
   type BuildStats,
   type ParsedBuildJson,
@@ -496,3 +499,7 @@ export {
   type ValidationSeverity,
   validateBuildJson,
 } from './validation/validate-build-json'
+
+export { planWallDivision, planWallRectangle, wallRectangleCorners } from './systems/wall/wall-operations'
+export { resolveWallLoop, type WallLoopScope } from './systems/wall/wall-loop'
+export { planSharedWallSegments, type SharedWallSegment } from './systems/wall/wall-coverage'

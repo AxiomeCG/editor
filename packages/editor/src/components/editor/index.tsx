@@ -54,6 +54,7 @@ import { type CameraHintAction, useCameraHintFocus } from '../../store/use-camer
 import useEditor from '../../store/use-editor'
 import useFloorplanMode from '../../store/use-floorplan-mode'
 import useSessionGroups from '../../store/use-session-groups'
+import { PlanWorkspace2D } from '../editor-2d/plan-workspace-layer'
 import { CeilingSelectionAffordanceSystem } from '../systems/ceiling/ceiling-selection-affordance-system'
 import { CeilingSystem } from '../systems/ceiling/ceiling-system'
 import { RoofEditSystem } from '../systems/roof/roof-edit-system'
@@ -69,6 +70,7 @@ import { EditorCommands } from '../ui/command-palette/editor-commands'
 import { FloatingLevelSelector } from '../ui/floating-level-selector'
 import { HelperManager } from '../ui/helpers/helper-manager'
 import { PanelManager } from '../ui/panels/panel-manager'
+import { PlanWorkspacePanel } from '../ui/plan-workspace-panel'
 import { ErrorBoundary } from '../ui/primitives/error-boundary'
 import { useSidebarStore } from '../ui/primitives/sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/primitives/tooltip'
@@ -79,6 +81,7 @@ import { SettingsPanel, type SettingsPanelProps } from '../ui/sidebar/panels/set
 import { SitePanel, type SitePanelProps } from '../ui/sidebar/panels/site-panel'
 import type { SidebarTab } from '../ui/sidebar/tab-bar'
 import { useHostPanels } from '../ui/sidebar/use-plugin-panels'
+import { PlanWorkspace3D } from '../viewer/plan-workspace-layer'
 import { ViewerStage } from '../viewer/viewer-stage'
 import type { ViewerStageMode } from '../viewer/viewer-stage-modes'
 import { CaptureCameraRig } from './capture-camera-rig'
@@ -107,6 +110,8 @@ import { type SnapshotCameraData, ThumbnailGenerator } from './thumbnail-generat
 import { WallMeasurementLabel } from './wall-measurement-label'
 import { WallMoveSideHandles } from './wall-move-side-handles'
 import { WallOpeningHighlights } from './wall-opening-highlights'
+import { WallSplitPanel } from './wall-split-panel'
+import { WallSplitPreviewLayer } from './wall-split-preview-layer'
 
 const CAMERA_CONTROLS_HINT_DISMISSED_STORAGE_KEY = 'editor-camera-controls-hint-dismissed:v1'
 const PREVIEW_STAGE_SWITCHER_POSITION =
@@ -812,6 +817,8 @@ const ViewerSceneContent = memo(function ViewerSceneContent({
       {!noEditing && <GroupRotateHandle />}
       {!noEditing && <GroupSelectionBox3D />}
       {!noEditing && <WallOpeningHighlights />}
+      {!noEditing && <WallSplitPreviewLayer />}
+      {!noEditing && <PlanWorkspace3D />}
       {!noEditing && <SlabHoleHighlights />}
       {!noEditing && <WallMoveSideHandles />}
       {!noEditing && <FenceTangentLines3D />}
@@ -1108,6 +1115,17 @@ const ViewerCanvas = memo(function ViewerCanvas({
           2d / 3d / split alike) can anchor to this container's bottom-left. */}
       <div className="relative flex h-full" ref={setViewerAreaNode}>
         <QuickMeasurementHud />
+        <WallSplitPanel />
+        <PlanWorkspacePanel
+          style={{
+            position: 'absolute',
+            left: 12,
+            bottom: 112,
+            width: 260,
+            maxWidth: 'calc(100% - 24px)',
+            maxHeight: 'calc(100% - 224px)',
+          }}
+        />
         <DeleteConfirmationDialog />
         {/* 2D floorplan — always mounted once shown, hidden via CSS to preserve state */}
         <div
@@ -1118,7 +1136,15 @@ const ViewerCanvas = memo(function ViewerCanvas({
           }}
         >
           <div className="h-full w-full overflow-hidden">
-            <FloorplanPanel compassHost={viewerAreaEl} floorplanSceneSlot={floorplanSceneSlot} />
+            <FloorplanPanel
+              compassHost={viewerAreaEl}
+              floorplanSceneSlot={
+                <>
+                  <PlanWorkspace2D />
+                  {floorplanSceneSlot}
+                </>
+              }
+            />
           </div>
           {viewMode === 'split' && (
             <div
@@ -1324,6 +1350,7 @@ function EditorContent({
   const [previewStageMode, setPreviewStageMode] = useState<ViewerStageMode>('3d')
   const isPreviewMode = useEditor((s) => s.isPreviewMode)
   const isCaptureMode = useEditor((s) => s.isCaptureMode)
+  const captureMode = useEditor((s) => s.captureMode)
 
   const sidebarWidth = useSidebarStore((s) => s.width)
   const isSidebarCollapsed = useSidebarStore((s) => s.isCollapsed)
@@ -1511,8 +1538,10 @@ function EditorContent({
       defaultRender={EDITOR_DEFAULT_RENDER}
       disablePostFx={disablePostFx}
       hoverStyles={EDITOR_HOVER_STYLES}
+      isolate={captureMode.mode === 'preset' ? captureMode.isolated : null}
       renderContext="editor"
       selectionManager="default"
+      transparent={captureMode.mode === 'preset' ? true : undefined}
     >
       <ExportManager />
       <ViewerZoneSystem />

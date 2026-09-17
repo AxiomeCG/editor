@@ -23,6 +23,12 @@
 - **Optional hosted key in the Cursor plugin** — `.cursor-plugin/plugin.json` declares an optional `PASCAL_API_KEY` variable and points at a Cursor-dialect `.cursor-plugin/mcp.json` that adds a `pascal-hosted` server for `https://editor.pascal.app/api/mcp`, so a Cursor install can reach hosted projects, Capture scans, and shared workspaces while the credential-free local server keeps working; the portable `mcp.json` stays credential-free because Agent Plugins 1.0.0 forbids secrets and placeholder expansion in `headers`, so Codex configures the hosted endpoint with `codex mcp add --bearer-token-env-var PASCAL_API_KEY` instead ([#849](https://github.com/pascalorg/editor/pull/849))
 - **Capture packages folded into core and viewer** — `@pascal-app/capture-protocol` is now `@pascal-app/core/capture` and `@pascal-app/capture-viewer` is now `@pascal-app/viewer/capture` (plus `@pascal-app/viewer/capture/preview`), so 1.0.0 ships seven packages instead of nine. Neither package was ever published to npm, so there is no npm migration; in-repo and workspace consumers change their import paths only.
 
+### Features
+
+- Add plugin-contributed editor panels and viewer presentations with project-local configuration persistence.
+- Expose generic atmosphere and ground-replacement adapters, Site-scoped floorplan output, bake-only GLB geometry, and plugin-owned selection materials.
+- Add portable GLB/USDZ downloads with asynchronous material baking, procedural-content filters, and opt-in static viewer-presentation exports.
+
 ### Fixes
 
 - Preserve native and active presentation skies in snapshots and keep preset captures transparent.
@@ -35,6 +41,8 @@
 - Omit stale viewer-surroundings selections from GLB/USDZ downloads after a presentation is unregistered or its plugin is uninstalled.
 - Keep export settings scrollable and group advanced model options in a keyboard-accessible disclosure.
 - Preserve child geometry when exporting empty mesh containers to USDZ.
+- Pin Environment to its published GitHub commit instead of a vendored archive.
+- Move the Environment zoo/museum/gym testbed into the Environment repository; remove its routes and homepage link from the main editor app.
 - Export the viewer's shadow-only layer for plugin consumers.
 - Remove the nonworking god-ray post-process and its dedicated viewer API; preserve sky, fog, lighting, and ordinary shadows.
 - Preserve grass and procedural material colors in portable exports; freeze instancing and deformation without changing the live scene or saved-viewer animation clips.

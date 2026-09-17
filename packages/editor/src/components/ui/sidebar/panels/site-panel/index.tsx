@@ -59,6 +59,8 @@ import useEditor from './../../../../../store/use-editor'
 import { useUploadStore } from '../../../../../store/use-upload'
 import { MetricControl } from '../../../controls/metric-control'
 import { LevelDuplicateDialog } from '../../../level-duplicate-dialog'
+import { MirrorAction } from '../../../../editor/mirror-action'
+import { ArrayFloorAction } from '../../../array-floor-action'
 import { InlineRenameInput } from './inline-rename-input'
 import { ZoneMembershipCheckbox } from './zone-membership-checkbox'
 import { focusTreeNode, TreeNode, TreeNodeWrapper } from './tree-node'
@@ -531,7 +533,7 @@ const LevelReferences = memo(function LevelReferences({
     // Auto-detect type based on file extension/mime type
     const isScan =
       file.name.toLowerCase().endsWith('.glb') || file.name.toLowerCase().endsWith('.gltf')
-    const isImage = file.type.startsWith('image/')
+    const isImage = file.type.startsWith('image/') || /\.svg$/i.test(file.name)
     const type = isScan ? 'scan' : 'guide'
 
     if (!(isScan || isImage)) {
@@ -564,8 +566,8 @@ const LevelReferences = memo(function LevelReferences({
         setSelection({ selectedIds: [], zoneId: null })
         useUploadStore.getState().setResult(levelId, guide.url)
         window.setTimeout(() => useUploadStore.getState().clearUpload(levelId), 600)
-      } catch {
-        useUploadStore.getState().setError(levelId, 'Could not add that guide image.')
+      } catch (error) {
+        useUploadStore.getState().setError(levelId, error instanceof Error ? error.message : 'Could not import that plan.')
       }
       return
     }
@@ -656,11 +658,11 @@ const LevelReferences = memo(function LevelReferences({
                 ) : (
                   <Plus className="h-3.5 w-3.5" />
                 )}
-                {uploading ? `Uploading ${uploadingType}... ${progress}%` : 'Upload scan/floorplan'}
+                {uploading ? `Uploading ${uploadingType}... ${progress}%` : 'Import plan or scan'}
               </button>
 
               <input
-                accept=".glb,.gltf,image/jpeg,image/png,image/webp,image/gif"
+                accept=".glb,.gltf,.svg,image/svg+xml,image/jpeg,image/png,image/webp,image/gif"
                 className="hidden"
                 onChange={handleAddAsset}
                 ref={scanInputRef}
@@ -719,8 +721,6 @@ const LevelItem = memo(function LevelItem({
   const [cameraPopoverOpen, setCameraPopoverOpen] = useState(false)
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
-  const createNodes = useScene((s) => s.createNodes)
-  const updateNodes = useScene((s) => s.updateNodes)
   const itemRef = useRef<HTMLDivElement>(null)
   const isSelected = selectedLevelId === level.id
   const canDeleteLevel = level.level !== 0
@@ -761,15 +761,10 @@ const LevelItem = memo(function LevelItem({
       preset,
     })
 
-    if (shiftedLevels.length > 0) {
-      updateNodes(
-        shiftedLevels.map((shiftedLevel) => ({
-          id: shiftedLevel.id as AnyNodeId,
-          data: { level: shiftedLevel.level } as Partial<AnyNode>,
-        })),
-      )
-    }
-    createNodes(createOps)
+    useScene.getState().applyNodeChanges({
+      update: shiftedLevels.map(level => ({ id: level.id, data: { level: level.level } })),
+      create: createOps,
+    })
     selectLevel(newLevelId as LevelNode['id'], false)
     setDuplicateDialogOpen(false)
   }
@@ -925,6 +920,8 @@ const LevelItem = memo(function LevelItem({
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-48 p-1" side="right">
+            <ArrayFloorAction levelId={level.id} />
+            <MirrorAction ids={[level.id]} label="Mirror floor" className="flex w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-sm hover:bg-accent" />
             <button
               className="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
               onClick={() => handleDuplicateLevel()}

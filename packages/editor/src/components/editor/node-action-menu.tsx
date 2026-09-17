@@ -3,6 +3,9 @@
 import { Icon } from '@iconify/react'
 import { Copy, Group, Move, PencilRuler, Search, Spline, Trash2, Ungroup } from 'lucide-react'
 import type { MouseEventHandler, PointerEventHandler } from 'react'
+import { MirrorAction } from './mirror-action'
+import { ArrayAction } from './array-action'
+import { SplitWallAction } from './split-wall-action'
 
 type NodeActionMenuProps = {
   onFind?: MouseEventHandler<HTMLButtonElement>
@@ -111,6 +114,7 @@ export function NodeActionMenu({
           <Spline className="h-4 w-4" />
         </button>
       )}
+      {onDuplicate && <SplitWallAction />}
       {onDuplicate && (
         <button
           aria-label="Duplicate"
@@ -122,6 +126,8 @@ export function NodeActionMenu({
           <Copy className="h-4 w-4" />
         </button>
       )}
+      {onDuplicate && <ArrayAction className="tooltip-trigger rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" />}
+      <MirrorAction className="tooltip-trigger rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" />
       {onAddHole && (
         <button
           aria-label="Cut Out"

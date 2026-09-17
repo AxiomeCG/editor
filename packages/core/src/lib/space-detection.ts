@@ -120,6 +120,7 @@ const WALL_ROOM_BOUNDARY_TOLERANCE = 0.08
 // A wall endpoint within this distance of another wall's interior is treated as a
 // T-junction and splits that wall (see `splitStraightWallAtVertices`).
 const WALL_JUNCTION_TOLERANCE = 0.08
+const WALL_ENDPOINT_TOLERANCE = 1e-4
 // An unmatched auto slab/ceiling whose polygon is still substantially covered
 // by a detected room was absorbed by a room merge — the surviving auto surface
 // owns that area, so keeping it would z-fight and it is deleted. Below this
@@ -568,18 +569,17 @@ function splitStraightWallAtVertices(start: Point2D, end: Point2D, vertices: Poi
   interior.sort((a, b) => a.t - b.t)
 
   const ordered: Point2D[] = [start]
-  let lastKey = pointKey(start)
   for (const { point } of interior) {
-    const key = pointKey(point)
-    if (key === lastKey) continue
+    if (samePointWithinTolerance(point, ordered[ordered.length - 1]!, WALL_ENDPOINT_TOLERANCE))
+      continue
     ordered.push(point)
-    lastKey = key
   }
-  if (lastKey !== pointKey(end)) ordered.push(end)
+  if (!samePointWithinTolerance(ordered[ordered.length - 1]!, end, WALL_ENDPOINT_TOLERANCE))
+    ordered.push(end)
   return ordered
 }
 
-function extractRooms(walls: WallNode[]): ExtractedRoom[] {
+function extractWallFaces(walls: WallNode[], exterior = false): ExtractedRoom[] {
   if (walls.length < 3) return []
 
   type HalfEdge = {
@@ -596,12 +596,34 @@ function extractRooms(walls: WallNode[]): ExtractedRoom[] {
 
   const graph = new Map<string, Node>()
   const halfEdges = new Map<string, HalfEdge>()
+  const endpointBuckets = new Map<string, string[]>()
 
   const upsertNode = (point: Point2D) => {
-    const key = pointKey(point)
-    if (!graph.has(key)) {
-      graph.set(key, { point: { ...point }, outgoing: [] })
+    // Rounded coordinate strings can split coincident SVG endpoints on a cell
+    // boundary. Buckets only narrow the search; distance establishes identity.
+    const x = Math.floor(point.x / WALL_ENDPOINT_TOLERANCE)
+    const y = Math.floor(point.y / WALL_ENDPOINT_TOLERANCE)
+    let nearest: string | undefined
+    let nearestDistance = Number.POSITIVE_INFINITY
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (const key of endpointBuckets.get(`${x + dx},${y + dy}`) ?? []) {
+          const candidate = graph.get(key)!.point
+          const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y)
+          if (distance <= WALL_ENDPOINT_TOLERANCE && distance < nearestDistance) {
+            nearest = key
+            nearestDistance = distance
+          }
+        }
+      }
     }
+    if (nearest !== undefined) return nearest
+    const key = String(graph.size)
+    graph.set(key, { point: { ...point }, outgoing: [] })
+    const bucketKey = `${x},${y}`
+    const bucket = endpointBuckets.get(bucketKey) ?? []
+    bucket.push(key)
+    endpointBuckets.set(bucketKey, bucket)
     return key
   }
 
@@ -610,15 +632,11 @@ function extractRooms(walls: WallNode[]): ExtractedRoom[] {
   // Without this the touching wall's endpoint is a dangling degree-1 node and the
   // enclosed area (e.g. a room added against the middle of an existing wall)
   // never forms a cycle.
-  const vertexByKey = new Map<string, Point2D>()
   for (const wall of walls) {
-    for (const tuple of [wall.start, wall.end]) {
-      const point = pointFromTuple(tuple)
-      const key = pointKey(point)
-      if (!vertexByKey.has(key)) vertexByKey.set(key, point)
-    }
+    upsertNode(pointFromTuple(wall.start))
+    upsertNode(pointFromTuple(wall.end))
   }
-  const vertices = [...vertexByKey.values()]
+  const vertices = [...graph.values()].map((node) => node.point)
 
   for (const wall of walls) {
     const start = pointFromTuple(wall.start)
@@ -781,8 +799,9 @@ function extractRooms(walls: WallNode[]): ExtractedRoom[] {
       if (polygon.length < 3) continue
 
       const signedArea = polygonArea(polygon)
-      if (signedArea <= 0) continue
-      if (signedArea < 0.5 || signedArea > 10_000) continue
+      if (exterior) {
+        if (signedArea >= -1e-6) continue
+      } else if (signedArea < 0.5 || signedArea > 10_000) continue
 
       const signature = polygonSignature(polygon)
       if (rooms.some((room) => polygonSignature(room.polygon) === signature)) continue
@@ -806,6 +825,33 @@ function extractRooms(walls: WallNode[]): ExtractedRoom[] {
 
   rooms.sort((a, b) => Math.abs(polygonArea(b.polygon)) - Math.abs(polygonArea(a.polygon)))
   return rooms
+}
+
+function extractRooms(walls: WallNode[]): ExtractedRoom[] {
+  return extractWallFaces(walls)
+}
+
+/** Unbounded faces of the wall graph, excluding loops enclosed by another footprint. */
+export function exteriorWallLoops(walls: WallNode[]): SpaceBoundaryFace[][] {
+  const loops = extractWallFaces(walls, true)
+  return loops
+    .filter(
+      (loop, index) =>
+        !loops.some((other, otherIndex) => {
+          if (
+            otherIndex === index ||
+            Math.abs(polygonArea(other.polygon)) <= Math.abs(polygonArea(loop.polygon))
+          )
+            return false
+          // Use boundary points, not the centroid: concave footprints may have a centroid outside.
+          return loop.polygon.every(
+            (point) =>
+              pointInPolygon(point, other.polygon) ||
+              pointDistanceToPolygonBoundary(point, other.polygon) < 1e-4,
+          )
+        }),
+    )
+    .map((loop) => loop.boundaryFaces)
 }
 
 function extractRoomPolygons(walls: WallNode[]): Point2D[][] {

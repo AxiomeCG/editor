@@ -721,9 +721,12 @@ export {
   useStairBuildPreview,
 } from './store/use-stair-build-preview'
 export { useUploadStore } from './store/use-upload'
+export { useRepeatTools, type RepeatRequest } from './store/use-repeat-tools'
 export { useWallMoveGhosts, type WallMoveGhostBridge } from './store/use-wall-move-ghosts'
 export {
   default as useWallSnapIndicator,
   type WallSnapKind,
   type WallSnapPoint,
 } from './store/use-wall-snap-indicator'
+
+export { useLinearDisplay } from './lib/use-linear-display'

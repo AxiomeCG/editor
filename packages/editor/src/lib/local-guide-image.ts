@@ -6,6 +6,7 @@ import {
   type ScanNode as ScanNodeType,
   saveAsset,
 } from '@pascal-app/core'
+import { readPlanFile } from './plan-reference/import'
 
 export function getGuideImageName(filename: string) {
   return getAssetName(filename, 'Guide image')
@@ -36,7 +37,10 @@ export async function createLocalGuideImage({
   levelId: string
   position?: [number, number, number]
 }) {
-  const assetUrl = await saveAsset(file)
+  const plan = await readPlanFile(file)
+  const assetUrl = await saveAsset(
+    file.type === plan.mimeType ? file : new File([file], file.name, { type: plan.mimeType }),
+  )
   const guide = GuideNode.parse({
     name: getGuideImageName(file.name),
     url: assetUrl,
@@ -45,6 +49,17 @@ export async function createLocalGuideImage({
     scale: 1,
     opacity: 50,
     scaleReference: null,
+    parentId: levelId,
+    metadata: {
+      planReference: {
+        version: 1,
+        assetId: crypto.randomUUID(),
+        role: 'floorplan',
+        width: plan.width,
+        height: plan.height,
+        mimeType: plan.mimeType,
+      },
+    },
   })
 
   createNode(guide, levelId as AnyNodeId)

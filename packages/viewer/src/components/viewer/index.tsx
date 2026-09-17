@@ -42,11 +42,11 @@ import { PerfPanel } from './perf-panel'
 import { PointerRaycastLayers } from './pointer-raycast-layers'
 import PostProcessing, { DEFAULT_HOVER_STYLES, type HoverStyles } from './post-processing'
 import { RegisteredSystems } from './registered-systems'
-import { useSceneAtmosphere } from './scene-atmosphere'
 import { SceneBvh } from './scene-bvh'
 import { SelectionManager } from './selection-manager'
 import { UnsupportedGpuViewerFallback } from './unsupported-gpu-fallback'
 import { ViewerCamera } from './viewer-camera'
+import { useSceneAtmosphere } from './scene-atmosphere'
 
 // Must be in place before any node material builds — a null texture pulled by
 // a shared override-material pass otherwise kills the render pass outright.
@@ -472,9 +472,10 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
   useLayoutEffect(() => {
     if (transparent === undefined) return
 
+    const previousTransparent = useViewer.getState().transparentBackground
     useViewer.getState().setTransparentBackground(transparent)
     return () => {
-      useViewer.getState().setTransparentBackground(false)
+      useViewer.getState().setTransparentBackground(previousTransparent)
     }
   }, [transparent])
 

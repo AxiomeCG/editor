@@ -64,6 +64,9 @@ import {
   getNearestAxisAngleLabel,
 } from '../shared/draft-axis-guides'
 
+import { useWallDrawingMode } from './drawing-mode'
+import RectangleWallTool from './rectangle-tool'
+
 /**
  * Phase 5 Stage D — wall placement tool (kind-owned).
  *
@@ -443,7 +446,7 @@ function getBelowLevelWalls(): WallNode[] {
   return getLevelWalls(belowLevel?.id ?? null, nodes)
 }
 
-export const WallTool: React.FC = () => {
+const LineWallTool: React.FC = () => {
   const unit = useViewer((state) => state.unit)
   const metricNotation = useViewer((state) => state.metricNotation)
   const isDark = useViewer((state) => getSceneTheme(state.sceneTheme).appearance === 'dark')
@@ -487,10 +490,6 @@ export const WallTool: React.FC = () => {
   const [axisGuide, setAxisGuide] = useState<DraftAxisGuideState>(null)
   const measurementColor = isDark ? '#ffffff' : '#111111'
   const measurementShadowColor = isDark ? '#111111' : '#ffffff'
-
-  // Clear preset-seeded defaults on deactivation so a later manual wall draw
-  // isn't built with a stale preset's parameters. Unmount-only.
-  useEffect(() => () => useEditor.getState().setToolDefaults('wall', null), [])
 
   useEffect(() => {
     let gridPosition: WallPlanPoint = [0, 0]
@@ -946,6 +945,15 @@ export const WallTool: React.FC = () => {
       )}
     </group>
   )
+}
+
+export const WallTool: React.FC = () => {
+  // Clear preset-seeded defaults on deactivation so a later manual wall draw
+  // isn't built with a stale preset's parameters. Unmount-only.
+  useEffect(() => () => useEditor.getState().setToolDefaults('wall', null), [])
+
+  const mode = useWallDrawingMode(s => s.mode)
+  return mode === 'rectangle' ? <RectangleWallTool /> : <LineWallTool />
 }
 
 export default WallTool

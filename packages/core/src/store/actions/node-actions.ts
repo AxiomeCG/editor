@@ -1,3 +1,4 @@
+import { reconcileBuildingLinks } from '../../building/scene-links'
 import { nodeRegistry } from '../../registry/registry'
 import { validateNodeRelations } from '../../registry/validate-relations'
 import {
@@ -1793,14 +1794,28 @@ const deleteNodesActionImpl = (
   })
 }
 
-function validatedSet(set: Parameters<typeof createNodesActionImpl>[0]): typeof set {
-  return (change) =>
+function validatedSet(
+  set: Parameters<typeof createNodesActionImpl>[0],
+  get: () => SceneState,
+): typeof set {
+  return (change) => {
+    let referenceUpdates: AnyNode[] = []
     set((state) => {
       const patch = change(state)
-      if (patch.nodes)
+      if (patch.nodes) {
+        referenceUpdates = reconcileBuildingLinks(
+          state.nodes,
+          patch.nodes,
+          activeSceneCommitNodeIds() ?? [],
+        )
+        for (const node of referenceUpdates) patch.nodes[node.id] = node
+        addActiveSceneCommitNodeIds(referenceUpdates.map((node) => node.id))
         validateNodeRelations(state.nodes, patch.nodes, activeSceneCommitNodeIds() ?? [])
+      }
       return patch
     })
+    for (const node of referenceUpdates) get().markDirty(node.id)
+  }
 }
 
 export const createNodesAction = (
@@ -1813,7 +1828,7 @@ export const createNodesAction = (
       const effectiveParentId = parentId ?? (node.parentId as AnyNodeId | null)
       return effectiveParentId ? [node.id, effectiveParentId] : [node.id]
     }),
-    () => createNodesActionImpl(validatedSet(set), get, ops),
+    () => createNodesActionImpl(validatedSet(set, get), get, ops),
   )
 
 export const applyNodeChangesAction = (
@@ -1830,7 +1845,7 @@ export const applyNodeChangesAction = (
       ...(changes.update ?? []).map(({ id }) => id),
       ...(changes.delete ?? []),
     ],
-    () => applyNodeChangesActionImpl(validatedSet(set), get, changes),
+    () => applyNodeChangesActionImpl(validatedSet(set, get), get, changes),
   )
 
 export const updateNodesAction = (
@@ -1840,11 +1855,11 @@ export const updateNodesAction = (
 ) =>
   runWithSceneCommitNodeIds(
     updates.map(({ id }) => id),
-    () => updateNodesActionImpl(validatedSet(set), get, updates),
+    () => updateNodesActionImpl(validatedSet(set, get), get, updates),
   )
 
 export const deleteNodesAction = (
   set: Parameters<typeof deleteNodesActionImpl>[0],
   get: Parameters<typeof deleteNodesActionImpl>[1],
   ids: AnyNodeId[],
-) => runWithSceneCommitNodeIds(ids, () => deleteNodesActionImpl(validatedSet(set), get, ids))
+) => runWithSceneCommitNodeIds(ids, () => deleteNodesActionImpl(validatedSet(set, get), get, ids))

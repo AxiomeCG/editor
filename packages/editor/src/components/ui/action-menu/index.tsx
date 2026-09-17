@@ -50,6 +50,7 @@ export function ActionMenu({ className }: { className?: string }) {
   return (
     <TooltipProvider>
       <motion.div
+        data-editor-bottom-bar
         className={cn(
           'left-1/2 z-50 -translate-x-1/2',
           isMobile ? 'absolute origin-bottom scale-90' : 'fixed bottom-6',

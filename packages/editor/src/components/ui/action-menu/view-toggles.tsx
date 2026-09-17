@@ -4,6 +4,7 @@ import {
   type AnyNodeId,
   type BuildingNode,
   type GuideNode,
+  getLevelDisplayName,
   type LevelNode,
   type ScanNode,
   useScene,
@@ -12,7 +13,6 @@ import { useViewer } from '@pascal-app/viewer'
 import { Check, ChevronDown, Eye, EyeOff, Layers2, Plus, Trash2, Waypoints } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { getLevelDisplayName } from '@pascal-app/core'
 import { createLocalGuideImage } from '../../../lib/local-guide-image'
 import { cn } from '../../../lib/utils'
 import useEditor from '../../../store/use-editor'
@@ -22,9 +22,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '../primitives/popover'
 import { ActionButton } from './action-button'
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024 // 200MB
-const ACCEPTED_FILE_TYPES = '.glb,.gltf,image/jpeg,image/png,image/webp,image/gif'
+const ACCEPTED_FILE_TYPES =
+  '.glb,.gltf,.svg,image/svg+xml,image/jpeg,image/png,image/webp,image/gif'
 const REFERENCES_EMPTY_TEXT =
-  'Upload GLB meshes as scan references or blueprint images as guide references.'
+  'Import SVG or image plans to calibrate, align and trace. GLB meshes can be used as scan references.'
 
 // ── Helper: get guide images for the current level ──────────────────────────
 
@@ -106,7 +107,7 @@ function UploadButton({ onError }: { onError: (message: string | null) => void }
 
       const isScan =
         file.name.toLowerCase().endsWith('.glb') || file.name.toLowerCase().endsWith('.gltf')
-      const isImage = file.type.startsWith('image/')
+      const isImage = file.type.startsWith('image/') || /\.svg$/i.test(file.name)
       if (!(isScan || isImage)) {
         onError('Upload a .glb/.gltf scan or an image.')
         return
@@ -119,8 +120,8 @@ function UploadButton({ onError }: { onError: (message: string | null) => void }
           setShowGuides(true)
           setSelectedReferenceId(guide.id)
           setSelection({ selectedIds: [], zoneId: null })
-        } catch {
-          onError('Could not add that guide image.')
+        } catch (error) {
+          onError(error instanceof Error ? error.message : 'Could not import that plan.')
         } finally {
           setIsAddingGuide(false)
         }
@@ -148,7 +149,8 @@ function UploadButton({ onError }: { onError: (message: string | null) => void }
   return (
     <>
       <button
-        aria-label="Upload scan or guide image"
+        aria-label="Import SVG, image plan or scan"
+        title="Import SVG, image plan or scan"
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/40 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
         disabled={isAddingGuide}
         onClick={() => fileInputRef.current?.click()}
@@ -754,7 +756,7 @@ function ReferencesControl() {
             onError={setUploadError}
             setShow={setShowGuides}
             show={showGuides}
-            title="Guide images"
+            title="Plan references"
           />
         </div>
       </PopoverContent>

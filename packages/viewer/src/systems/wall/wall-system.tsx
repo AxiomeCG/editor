@@ -1072,7 +1072,7 @@ const WALL_UV_UNIT_SCALE = new THREE.Vector3(1, 1, 1)
  * edges). Applied only to the render mesh; collision/floorplan geometry is
  * untouched.
  */
-function applyWorldPlanarWallUVs(
+export function applyWorldPlanarWallUVs(
   geometry: THREE.BufferGeometry,
   worldMatrix: THREE.Matrix4,
 ): THREE.BufferGeometry {
@@ -1468,11 +1468,10 @@ function collectCutoutBrushes(
 ): Brush[] {
   const brushes: Brush[] = []
   const wallMesh = sceneRegistry.nodes.get(wallNode.id) as THREE.Mesh
-  if (!wallMesh) return brushes
-
-  // Get wall's world matrix inverse to transform cutouts to wall-local space
-  wallMesh.updateMatrixWorld()
-  const wallMatrixInverse = wallMesh.matrixWorld.clone().invert()
+  // Native openings already carry wall-local coordinates, including in an isolated preview.
+  // Only hosted item cutouts need a registered world transform.
+  wallMesh?.updateMatrixWorld()
+  const wallMatrixInverse = wallMesh?.matrixWorld.clone().invert()
 
   for (const child of childrenNodes) {
     if (child.type !== 'item' && child.type !== 'window' && child.type !== 'door') continue
@@ -1483,7 +1482,7 @@ function collectCutoutBrushes(
     }
 
     const childMesh = sceneRegistry.nodes.get(child.id)
-    if (!childMesh) continue
+    if (!childMesh || !wallMatrixInverse) continue
 
     const cutoutMesh = childMesh.getObjectByName('cutout') as THREE.Mesh
     if (!cutoutMesh) continue

@@ -11,7 +11,6 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -32,6 +31,8 @@ import {
   ClipboardPaste,
   Copy,
   GripVertical,
+  Layers3,
+  Link2,
   MoreVertical,
   Plus,
   Trash2,
@@ -46,6 +47,7 @@ import {
   useState,
 } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { MirrorAction } from '../editor/mirror-action'
 import { pasteSelectionAndPickUp } from '../editor/group-actions'
 import {
   buildLevelDuplicateCreateOps,
@@ -68,6 +70,8 @@ import {
   DialogTitle,
 } from './primitives/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from './primitives/popover'
+import { useRepeatTools } from '../../store/use-repeat-tools'
+import { groupLinkedLevels, reorderLinkedLevels } from '../../lib/linked-level-groups'
 
 // ── Inline rename input for a level row ─────────────────────────────────────
 
@@ -155,6 +159,7 @@ function LevelRow({
   onRequestDelete: () => void
 }) {
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+  const repeatEnabled = useRepeatTools(s => s.enabled)
   const [isEditing, setIsEditing] = useState(false)
   const updateNode = useScene((s) => s.updateNode)
   const { isImperial, toDisplay, displayUnit, precision: displayPrecision } = useLinearDisplay('m', 2)
@@ -286,6 +291,7 @@ function LevelRow({
             <PopoverTrigger asChild>
               <button
                 className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground group-hover/level:opacity-100"
+                aria-label={`Actions for ${getLevelDisplayName(level)}`}
                 onClick={(e) => e.stopPropagation()}
                 type="button"
               >
@@ -315,6 +321,12 @@ function LevelRow({
                 <Copy className="h-3 w-3" />
                 Duplicate with options...
               </button>
+              {repeatEnabled && <>
+                <MirrorAction ids={[level.id]} label="Mirror floor" className="flex w-full items-center gap-2 rounded-full px-2.5 py-1.5 text-left text-muted-foreground text-xs hover:bg-white/10 hover:text-foreground" />
+                <button type="button" className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted-foreground text-xs hover:bg-white/10 hover:text-foreground" onClick={event=>{event.stopPropagation();useRepeatTools.getState().open({kind:'placeholder',ids:[level.id]})}}><Layers3 className="h-3 w-3"/>Placeholder floors…</button>
+                <button type="button" className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted-foreground text-xs hover:bg-white/10 hover:text-foreground" onClick={event=>{event.stopPropagation();useRepeatTools.getState().open({kind:'array',ids:[level.id]})}}><Copy className="h-3 w-3"/>Array floor…</button>
+                <button type="button" className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted-foreground text-xs hover:bg-white/10 hover:text-foreground" onClick={event=>{event.stopPropagation();useRepeatTools.getState().open({kind:'floorplan',ids:[level.id]})}}><ClipboardPaste className="h-3 w-3"/>Import floorplan…</button>
+              </>}
               {onPaste && (
                 <button
                   className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted-foreground text-xs transition-colors hover:bg-white/10 hover:text-foreground"
@@ -452,7 +464,6 @@ export function FloatingLevelSelector() {
   const levelId = useViewer((s) => s.selection.levelId)
   const setSelection = useViewer((s) => s.setSelection)
   const createNode = useScene((s) => s.createNode)
-  const createNodes = useScene((s) => s.createNodes)
   const updateNodes = useScene((s) => s.updateNodes)
 
   const [deletingLevel, setDeletingLevel] = useState<LevelNode | null>(null)
@@ -567,22 +578,17 @@ export function FloatingLevelSelector() {
         preset,
       })
 
-      if (shiftedLevels.length > 0) {
-        updateNodes(
-          shiftedLevels.map((shiftedLevel) => ({
-            id: shiftedLevel.id as AnyNodeId,
-            data: { level: shiftedLevel.level } as Partial<AnyNode>,
-          })),
-        )
-      }
-      createNodes(createOps)
+      useScene.getState().applyNodeChanges({
+        update: shiftedLevels.map(level => ({ id: level.id, data: { level: level.level } })),
+        create: createOps,
+      })
 
       setSelection({
         buildingId: resolvedBuildingId ?? undefined,
         levelId: newLevelId as LevelNode['id'],
       })
     },
-    [createNodes, levels, resolvedBuildingId, setSelection, updateNodes],
+    [levels, resolvedBuildingId, setSelection],
   )
 
   const handlePasteToLevel = useCallback((level: LevelNode) => {
@@ -600,12 +606,7 @@ export function FloatingLevelSelector() {
       const { active, over } = event
       if (!over || active.id === over.id) return
 
-      const visualLevels = [...levels].reverse()
-      const oldIndex = visualLevels.findIndex((level) => level.id === active.id)
-      const newIndex = visualLevels.findIndex((level) => level.id === over.id)
-      if (oldIndex === -1 || newIndex === -1) return
-
-      const reorderedVisualLevels = arrayMove(visualLevels, oldIndex, newIndex)
+      const reorderedVisualLevels = reorderLinkedLevels(levels,String(active.id),String(over.id)).reverse()
       const levelNumbersDescending = levels.map((level) => level.level).sort((a, b) => b - a)
 
       const updates = reorderedVisualLevels
@@ -634,6 +635,7 @@ export function FloatingLevelSelector() {
   if (levels.length === 0) return null
 
   const reversedLevels = [...levels].reverse()
+  const levelEntries = groupLinkedLevels(levels)
   const sortableLevelIds = reversedLevels.map((level) => level.id)
 
   const addButtonClass =
@@ -680,10 +682,21 @@ export function FloatingLevelSelector() {
           >
             <SortableContext items={sortableLevelIds} strategy={verticalListSortingStrategy}>
               <div className="flex flex-col gap-0.5 rounded-xl border border-border bg-background/90 p-1 shadow-2xl backdrop-blur-md">
-                {reversedLevels.map((level, i) => {
+                {levelEntries.map(({level,copies,sourceId}, i) => {
+                  if(copies && sourceId){
+                    const source=levels.find(entry=>entry.id===sourceId)
+                    const sourceName=source?getLevelDisplayName(source):'source floor'
+                    const height=copies.reduce((sum,copy)=>sum+getStoredLevelHeight(copy),0)
+                    const placeholder=typeof level.metadata.placeholderSource==='string'
+                    return <button key={level.id} type="button" aria-label={`${copies.length} linked ${placeholder?'placeholder ':''}floors controlled by ${sourceName}`} className="relative mx-1 my-1 flex min-w-52 flex-col items-start justify-center gap-1 overflow-hidden rounded-lg border border-primary/30 bg-primary/10 px-3 text-left shadow-inner transition-colors hover:bg-primary/20" style={{height:Math.min(128,52+copies.length*8),backgroundImage:'repeating-linear-gradient(to bottom, transparent, transparent 7px, color-mix(in srgb, currentColor 5%, transparent) 7px, color-mix(in srgb, currentColor 5%, transparent) 8px)'}} onClick={()=>useRepeatTools.getState().open({kind:placeholder?'placeholder':'array',ids:[sourceId as AnyNodeId]})}>
+                      <span className="flex items-center gap-2 text-xs font-medium"><Layers3 className="h-4 w-4"/>{copies.length} {placeholder?'placeholder':'linked'} floors</span>
+                      <span className="text-[10px] text-muted-foreground">{height.toFixed(1)} m · floors {copies.at(-1)!.level}–{copies[0]!.level}</span>
+                      <span className="flex items-center gap-1 text-[10px] text-primary"><Link2 className="h-3 w-3"/>Controlled by {sourceName} ↓</span>
+                    </button>
+                  }
                   const isSelected = level.id === levelId
                   const sortedIndex = levels.indexOf(level)
-                  const showGapBelow = i < reversedLevels.length - 1
+                  const showGapBelow = i < levelEntries.length - 1 && !levelEntries[i+1]?.copies
 
                   return (
                     <div

@@ -7,6 +7,8 @@ import { getDefaultLevelName } from '@pascal-app/core'
 import { InlineRenameInput } from './inline-rename-input'
 import { focusTreeNode, TreeNode, TreeNodeWrapper } from './tree-node'
 import { TreeNodeActions } from './tree-node-actions'
+import { MirrorAction } from '../../../../editor/mirror-action'
+import { ArrayFloorAction } from '../../../array-floor-action'
 
 interface LevelTreeNodeProps {
   nodeId: LevelNode['id']
@@ -43,7 +45,7 @@ export const LevelTreeNode = memo(function LevelTreeNode({
 
   return (
     <TreeNodeWrapper
-      actions={<TreeNodeActions nodeId={nodeId} />}
+      actions={<><ArrayFloorAction levelId={nodeId} compact /><MirrorAction ids={[nodeId]} className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-accent" /><TreeNodeActions nodeId={nodeId} /></>}
       depth={depth}
       expanded={expanded}
       hasChildren={children.length > 0}

@@ -125,7 +125,7 @@ describe('unit duplication', () => {
       expect(op.node.type).toBe('unit')
       if (op.node.type !== 'unit') return
       expect(op.node.id).not.toBe(single.id)
-      expect(op.node.name).toBe('Suite copy')
+      expect(op.node.name).toBe('Suite')
       expect(op.node.kind).toBe(single.kind)
       expect(op.node.color).toBe(single.color)
       expect(op.node.parentId).toBe(building.id)

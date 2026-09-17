@@ -23,11 +23,13 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { guideEmitter } from '../../../lib/guide-events'
 import { getGuideImageName } from '../../../lib/local-guide-image'
+import { readPlanFile } from '../../../lib/plan-reference/import'
 import { cn } from '../../../lib/utils'
 import useEditor from '../../../store/use-editor'
 import { ActionButton, ActionGroup } from '../controls/action-button'
 import { PanelSection } from '../controls/panel-section'
 import { SliderControl } from '../controls/slider-control'
+import { PlanGuideActions } from '../plan-guide-actions'
 import { PanelWrapper } from './panel-wrapper'
 
 type ReferenceNode = ScanNode | GuideNode
@@ -62,6 +64,12 @@ export function ReferencePanel() {
       ? (s.nodes[selectedReferenceId as AnyNode['id']] as ReferenceNode | undefined)
       : undefined,
   )
+  const hasPlanTools = useScene(
+    (s) =>
+      node?.type === 'guide' &&
+      !!node.parentId &&
+      s.nodes[node.parentId as AnyNode['id']]?.type === 'level',
+  )
   const isScaleFlowActive = useEditor(
     (s) => s.referenceScaleActiveGuideId !== null && s.referenceScaleActiveGuideId === node?.id,
   )
@@ -84,8 +92,8 @@ export function ReferencePanel() {
         return
       }
 
-      if (!file.type.startsWith('image/')) {
-        setReplaceError('Choose a PNG, JPEG, or WebP image.')
+      if (!(file.type.startsWith('image/') || /\.svg$/i.test(file.name))) {
+        setReplaceError('Choose an SVG, PNG, JPEG, or WebP plan.')
         return
       }
 
@@ -93,26 +101,43 @@ export function ReferencePanel() {
       setReplaceError(null)
 
       try {
-        const assetUrl = await saveAsset(file)
+        const plan = await readPlanFile(file)
+        const assetUrl = await saveAsset(
+          file.type === plan.mimeType ? file : new File([file], file.name, { type: plan.mimeType }),
+        )
+        if (useScene.getState().readOnly || useScene.getState().nodes[node.id] !== node)
+          throw Error('This plan changed. Select it again before replacing it.')
         updateNode(
           selectedReferenceId as AnyNode['id'],
           {
             name: getGuideImageName(file.name),
             url: assetUrl,
             scaleReference: null,
+            metadata: {
+              ...node.metadata,
+              planReference: {
+                version: 1,
+                assetId: crypto.randomUUID(),
+                role: 'floorplan',
+                width: plan.width,
+                height: plan.height,
+                mimeType: plan.mimeType,
+              },
+              planVectors: undefined,
+            },
           } as Partial<GuideNode>,
         )
         setGuideScaleReferenceVisible(selectedReferenceId, true)
         // The new image starts uncalibrated — drop the calibration auto-lock
         // so it can be resized/rotated right away.
         setGuideLocked(selectedReferenceId, false)
-      } catch {
-        setReplaceError('Could not replace that image.')
+      } catch (error) {
+        setReplaceError(error instanceof Error ? error.message : 'Could not replace that image.')
       } finally {
         setIsReplacing(false)
       }
     },
-    [node?.type, selectedReferenceId, setGuideScaleReferenceVisible, updateNode],
+    [node, selectedReferenceId, setGuideLocked, setGuideScaleReferenceVisible, updateNode],
   )
 
   const handleDeleteGuide = useCallback(() => {
@@ -186,7 +211,7 @@ export function ReferencePanel() {
         <>
           <PanelSection title="Image">
             <input
-              accept="image/*"
+              accept="image/*,.svg"
               className="hidden"
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0]
@@ -252,7 +277,7 @@ export function ReferencePanel() {
             )}
           </PanelSection>
 
-          <PanelSection title="Reference Scale">
+          <PanelSection title="Plan tools">
             <div className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-2 text-sm">
               <Ruler
                 className={cn(
@@ -263,7 +288,7 @@ export function ReferencePanel() {
               <span className="truncate text-muted-foreground">{scaleStatus}</span>
             </div>
 
-            {!node.scaleReference && (
+            {!hasPlanTools && !node.scaleReference && (
               <p className="px-0.5 text-muted-foreground text-xs leading-snug">
                 {isScaleFlowActive
                   ? 'Click both ends of a known distance on the plan, then type its real length.'
@@ -271,19 +296,23 @@ export function ReferencePanel() {
               </p>
             )}
 
-            <ActionGroup>
-              <ActionButton
-                className={cn(
-                  !node.scaleReference &&
-                    !isScaleFlowActive &&
-                    'border-primary/50 bg-primary/15 text-primary hover:bg-primary/25 active:bg-primary/25',
-                )}
-                label={
-                  isScaleFlowActive ? 'Cancel' : node.scaleReference ? 'Edit Scale' : 'Set Scale'
-                }
-                onClick={isScaleFlowActive ? handleCancelScale : handleStartScale}
-              />
-            </ActionGroup>
+            {hasPlanTools ? (
+              <PlanGuideActions key={node.id} guide={node} />
+            ) : (
+              <ActionGroup>
+                <ActionButton
+                  className={cn(
+                    !node.scaleReference &&
+                      !isScaleFlowActive &&
+                      'border-primary/50 bg-primary/15 text-primary hover:bg-primary/25 active:bg-primary/25',
+                  )}
+                  label={
+                    isScaleFlowActive ? 'Cancel' : node.scaleReference ? 'Edit Scale' : 'Set Scale'
+                  }
+                  onClick={isScaleFlowActive ? handleCancelScale : handleStartScale}
+                />
+              </ActionGroup>
+            )}
 
             {node.scaleReference && (
               <ActionGroup>

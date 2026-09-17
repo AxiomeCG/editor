@@ -12,6 +12,7 @@ import {
 } from '@pascal-app/editor'
 import { buildWallContextualDimensions } from './contextual-dimensions'
 import { hasWallCurveBlockingChildren } from './curve-eligibility'
+import { useWallDrawingMode } from './drawing-mode'
 import { buildWallFloorplan, computeWallFloorplanLevelData } from './floorplan'
 import {
   wallCurveAffordance,
@@ -71,6 +72,7 @@ export const wallDefinition: NodeDefinition<typeof WallNode> = {
       },
     } satisfies DraftingSurfaceExtension,
     'pascal:editor/floorplan': {
+      tool: () => import('./rectangle-floorplan-tool'),
       contextualDimensions: buildWallContextualDimensions,
       actionMenu: {
         canCurve: ({ node, nodes }) =>
@@ -146,6 +148,34 @@ export const wallDefinition: NodeDefinition<typeof WallNode> = {
   // auto-slab live preview, history dances). Placement is wired via
   // `def.tool`.
   tool: () => import('./tool'),
+  toolOptions: [
+    {
+      id: 'shape',
+      label: 'Draw',
+      choices: [
+        {
+          value: 'line',
+          label: 'Line',
+          icon: {
+            kind: 'svg',
+            viewBox: '0 0 24 24',
+            path: 'M4 18.6 18.6 4l1.4 1.4L5.4 20zM2 17h5v5H2zM17 2h5v5h-5z',
+          },
+          description: 'Click to draw connected wall segments.',
+        },
+        {
+          value: 'rectangle',
+          label: 'Rectangle',
+          icon: { kind: 'svg', viewBox: '0 0 24 24', path: 'M3 3h18v18H3V3zm2 2v14h14V5H5z' },
+          description: 'Click two opposite corners to create a closed room.',
+        },
+      ],
+      subscribe: (listener) => useWallDrawingMode.subscribe(listener),
+      value: () => useWallDrawingMode.getState().mode,
+      set: (value) =>
+        useWallDrawingMode.getState().setMode(value === 'rectangle' ? 'rectangle' : 'line'),
+    },
+  ],
   preview: () => import('./preview'),
   affordanceTools: {
     curve: () => import('./curve-tool'),

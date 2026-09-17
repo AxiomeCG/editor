@@ -128,3 +128,49 @@ describe('snapLevelsToTruePositions', () => {
     expect(objects.map((object) => object.visible)).toEqual([false, true])
   })
 })
+
+describe('placeholder block presentation', () => {
+  function linkedFixture() {
+    const fixture = setupLevels([0, 0, 0, 0, 0])
+    const nodes = { ...useScene.getState().nodes }
+    for (const level of fixture.levels.slice(1, 4)) {
+      const id = level.id as AnyNodeId
+      nodes[id] = { ...nodes[id]!, metadata: { placeholderSource: fixture.levels[0]!.id } }
+    }
+    useScene.setState({ nodes })
+    return fixture
+  }
+
+  test('shares one exploded gap across consecutive copies, including following floor camera targets', async () => {
+    const { levels, objects } = linkedFixture()
+    setLevelMode('exploded')
+    updateLevelPresentation(1 / 12)
+    expect(objects.map(object => object.position.y)).toEqual([0, 7.5, 10, 12.5, 20])
+    const { getLevelPresentationY } = await import('./level-utils')
+    expect(getLevelPresentationY(levels[3]!.id, useScene.getState().nodes, 'exploded')).toBe(12.5)
+    expect(getLevelPresentationY(levels[4]!.id, useScene.getState().nodes, 'exploded')).toBe(20)
+  })
+
+  test('keeps the block rigid during animation in both directions', () => {
+    const { objects } = linkedFixture()
+    objects.forEach((object, i) => { object.position.y = i * 2.5 })
+    for (const mode of ['exploded', 'stacked'] as const) {
+      setLevelMode(mode)
+      for (let i = 0; i < 5; i++) {
+        updateLevelPresentation(1 / 60)
+        expect(objects[2]!.position.y - objects[1]!.position.y).toBeCloseTo(2.5)
+        expect(objects[3]!.position.y - objects[2]!.position.y).toBeCloseTo(2.5)
+      }
+    }
+  })
+
+  test('making a middle floor real splits the block into independent exploded groups', () => {
+    const { levels, objects } = linkedFixture()
+    const id = levels[2]!.id as AnyNodeId, nodes = { ...useScene.getState().nodes }
+    nodes[id] = { ...nodes[id]!, metadata: {} }
+    useScene.setState({ nodes })
+    setLevelMode('exploded')
+    updateLevelPresentation(1 / 12)
+    expect(objects.map(object => object.position.y)).toEqual([0, 7.5, 15, 22.5, 30])
+  })
+})

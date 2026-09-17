@@ -16,10 +16,12 @@ import { registerFindNodes } from './find-nodes'
 import { registerGetNode } from './get-node'
 import { registerGetScene } from './get-scene'
 import { registerListUnits } from './list-units'
+import { registerMirror } from './mirror'
 import { registerMeasure } from './measure'
 import { registerPhotoToSceneTool } from './photo-to-scene'
 import { registerPlaceItem } from './place-item'
 import { registerRedo } from './redo'
+import { registerReferenceConstruction } from './reference-construction'
 import { registerRoomTools } from './room-tools'
 import { registerSceneLifecycleTools } from './scene-lifecycle'
 import { registerSceneQueryTools } from './scene-query'
@@ -47,6 +49,8 @@ export function registerTools(server: McpServer, operations: SceneOperations): v
   registerMeasure(server, operations)
   registerConstructionTools(server, operations)
   registerRoomTools(server, operations)
+  registerReferenceConstruction(server, operations)
+  registerMirror(server, operations)
   registerApplyPatch(server, operations)
   registerCreateLevel(server, operations)
   registerCreateUnit(server, operations)

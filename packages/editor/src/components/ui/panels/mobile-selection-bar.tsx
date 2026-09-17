@@ -6,6 +6,8 @@ import Image from 'next/image'
 import type { MouseEventHandler } from 'react'
 import { cn } from '../../../lib/utils'
 import { getNodeDisplay } from './node-display'
+import { MirrorAction } from '../../editor/mirror-action'
+import { ArrayAction } from '../../editor/array-action'
 
 interface MobileSelectionBarProps {
   node: AnyNode | null
@@ -36,7 +38,7 @@ export function MobileSelectionBar({
   const stop: MouseEventHandler<HTMLButtonElement> = (e) => e.stopPropagation()
 
   return (
-    <div className="pointer-events-auto absolute right-3 bottom-6 left-3 z-50 flex h-12 items-stretch gap-1 rounded-2xl border border-border/50 bg-background/95 px-2 shadow-2xl backdrop-blur-xl">
+    <div data-editor-bottom-bar className="pointer-events-auto absolute right-3 bottom-6 left-3 z-50 flex h-12 items-stretch gap-1 rounded-2xl border border-border/50 bg-background/95 px-2 shadow-2xl backdrop-blur-xl">
       <button
         aria-label={`Edit ${resolvedLabel}`}
         className={cn(
@@ -78,6 +80,7 @@ export function MobileSelectionBar({
         >
           <Copy className="h-4 w-4" />
         </button>
+        <ArrayAction className={ACTION_BTN}/><MirrorAction className={ACTION_BTN}/>
         <button
           aria-label="Delete"
           className={cn(ACTION_BTN, 'hover:bg-red-500/15 hover:text-red-400')}

@@ -2,6 +2,41 @@ import { getLevelElevations, type LevelNode, sceneRegistry, useScene } from '@pa
 
 export const EXPLODED_GAP = 5
 
+export type LevelPresentationGroup = { anchorId: string; explodedIndex: number }
+let groupedNodes: Record<string, unknown> | undefined
+let groupedLevels = new Map<string, LevelPresentationGroup>()
+
+/** Consecutive placeholder copies form one presentation block. Editable floors remain separate. */
+export function getLevelPresentationGroups(nodes: Record<string, unknown>) {
+  if (nodes === groupedNodes) return groupedLevels
+  const buildings = new Map<string | null, LevelNode[]>()
+  for (const value of Object.values(nodes)) {
+    const level = value as LevelNode
+    if (level?.type !== 'level') continue
+    const levels = buildings.get(level.parentId ?? null) ?? []
+    levels.push(level); buildings.set(level.parentId ?? null, levels)
+  }
+  const result = new Map<string, LevelPresentationGroup>()
+  for (const levels of buildings.values()) {
+    levels.sort((a, b) => a.level - b.level)
+    let collapsed = 0, previous: LevelNode | undefined, previousSource: string | undefined
+    for (const level of levels) {
+      const sourceId = level.metadata?.placeholderSource
+      const source = typeof sourceId === 'string' ? nodes[sourceId] as LevelNode | undefined : undefined
+      const validSource = source?.type === 'level' && source.parentId === level.parentId ? source.id : undefined
+      const linked = validSource && validSource === previousSource && previous
+      if (linked) collapsed += level.level - linked.level
+      result.set(level.id, {
+        anchorId: linked ? result.get(linked.id)!.anchorId : level.id,
+        explodedIndex: level.level - collapsed,
+      })
+      previous = level; previousSource = validSource
+    }
+  }
+  groupedNodes = nodes; groupedLevels = result
+  return result
+}
+
 /**
  * The Y a level settles at under the given presentation mode — its stacked
  * elevation plus the exploded gap. Analytic (scene store + mode), never a
@@ -16,7 +51,7 @@ export function getLevelPresentationY(
 ): number {
   const level = nodes[levelId] as LevelNode | undefined
   const baseY = getLevelElevations(nodes as never).get(levelId)?.baseY ?? 0
-  const explodedExtra = levelMode === 'exploded' && level ? level.level * EXPLODED_GAP : 0
+  const explodedExtra = levelMode === 'exploded' && level ? (getLevelPresentationGroups(nodes).get(levelId)?.explodedIndex ?? level.level) * EXPLODED_GAP : 0
   return baseY + explodedExtra
 }
 
