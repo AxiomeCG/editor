@@ -41,15 +41,10 @@ export type PlanRaster = {
   rgba: Uint8ClampedArray
   width: number
   height: number
-  /** Raster pixels per source-image pixel. */
-  scale: number
 }
 
 /** Decode + rasterize a plan at a trace-friendly resolution (sharp for SVGs). */
-export async function rasterizePlanImage(
-  url: string,
-  signal?: AbortSignal,
-): Promise<PlanRaster> {
+export async function rasterizePlanImage(url: string, signal?: AbortSignal): Promise<PlanRaster> {
   const resolved = await loadAssetUrl(url)
   if (!resolved) throw Error('The plan file is unavailable.')
   const response = await fetch(resolved, { signal })
@@ -79,7 +74,7 @@ export async function rasterizePlanImage(
     context.fillStyle = 'white'
     context.fillRect(0, 0, width, height)
     context.drawImage(img, 0, 0, width, height)
-    return { rgba: context.getImageData(0, 0, width, height).data, width, height, scale }
+    return { rgba: context.getImageData(0, 0, width, height).data, width, height }
   } finally {
     URL.revokeObjectURL(objectUrl)
   }

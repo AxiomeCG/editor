@@ -1,9 +1,9 @@
 'use client'
 
-import { constrainReferenceHeight, outlineBatchPrimitiveNodes } from '@pascal-app/core/building'
-
 import {
+  type AnyNode,
   type AnyNodeId,
+  planarizeWallBatch,
   type GuideNode,
   getStoredLevelHeight,
   type LevelNode,
@@ -11,9 +11,15 @@ import {
   useScene,
   type WallNode,
 } from '@pascal-app/core'
+import {
+  balconyElevation,
+  constrainReferenceHeight,
+  DEFAULT_BALCONY,
+  outlineBatchPrimitiveNodes,
+  propPlacementNodes,
+} from '@pascal-app/core/building'
 import { useViewer } from '@pascal-app/viewer'
 import { create } from 'zustand'
-import { balconyElevation, DEFAULT_BALCONY } from '@pascal-app/core/building'
 import {
   measuredPlanScale,
   type PlanPoint,
@@ -27,11 +33,12 @@ import {
 } from '../lib/plan-reference/guides'
 import { getPlanMatchAnchors, guideReferenceDraft } from '../lib/plan-reference/matching'
 import { type ReferenceOutline, sampleReferenceOutline } from '../lib/plan-reference/outlines'
-import { pickWhitespaceRegion } from '../lib/plan-reference/whitespace'
+import { propCatalogItem } from '../lib/plan-reference/prop-catalog'
 import {
   type PlanSelectionMode,
   planSelectionGeometry,
 } from '../lib/plan-reference/selection-geometry'
+import { pickWhitespaceRegion } from '../lib/plan-reference/whitespace'
 import {
   activeReferencePoints,
   alignReferenceDraft,
@@ -362,7 +369,7 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
       set({ whitespaceBusy: true, error: '' })
       try {
         const shape = await pickWhitespaceRegion({
-          url: draft.image.url,
+          image: draft.image,
           seedPixel: pixel,
           metersPerPixel: draft.transform.metersPerPixel,
           gapToleranceMeters: draft.gapTolerance,
@@ -371,12 +378,13 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
           set({ error: 'Click inside a room of the plan — not on a line or outside it.' })
           return
         }
+        // The raster decode is async: drop the fill if the session changed meanwhile.
         get().change((d) =>
-          d.mode === 'shapes'
+          d.mode === 'shapes' && d.id === draft.id && d.selectionMode === 'areas'
             ? {
                 ...d,
-                shapes: [...d.shapes, shape],
-                selected: d.selected.includes(shape.id) ? d.selected : [...d.selected, shape.id],
+                fills: [...(d.fills ?? []), shape],
+                selected: [...d.selected, shape.id],
               }
             : d,
         )
@@ -478,11 +486,27 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
           })
           for (const b of batch) useEditor.getState().setGuideLocked(b.node.id, true)
         } else {
-          const created = outlineBatchPrimitiveNodes({
+          const picked = workspaceShapeCandidates(draft).filter((s) =>
+            draft.selected.includes(s.id),
+          )
+          const prop = draft.kind === 'prop' ? propCatalogItem(draft.propItemId) : undefined
+          if (draft.kind === 'prop' && !prop) throw Error('Choose a catalog item for these symbols.')
+          const built: AnyNode[] = prop
+            ? propPlacementNodes({
+                guide: draft.guide,
+                level,
+                shapes: picked,
+                grouping: draft.symbolGrouping,
+                asset: prop,
+                quarterTurns: draft.propTurns,
+                name: prop.name,
+              })
+            : draft.kind === 'prop'
+              ? []
+              : outlineBatchPrimitiveNodes({
             guide: draft.guide,
             level,
-            shapes: workspaceShapeCandidates(draft)
-              .filter((s) => draft.selected.includes(s.id))
+            shapes: picked
               .map((s) => ({
                 ...s,
                 // The fill-as-wall reading needs the inner contours: they are
@@ -491,6 +515,7 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
               })),
             kind: draft.kind,
             fillAsWall: draft.fillAsWall,
+            openingGrouping: draft.symbolGrouping,
             height:
               draft.kind === 'balcony'
                 ? balconyElevation(
@@ -520,6 +545,13 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
                           ? 'Apartment'
                           : 'Plan zone',
           })
+          // Plan walls join each other and the level's walls the way hand-drawn
+          // ones do, so rooms close and slabs split along them.
+          const network =
+            draft.kind === 'walls'
+              ? planarizeWallBatch(built as WallNode[], scene.nodes, level.id)
+              : null
+          const created = network ? network.walls : built
           if (!created.length)
             throw Error('These walls already exist. Select another outline or cancel.')
           runAsSingleSceneHistoryStep(useScene, () => {
@@ -527,14 +559,15 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
               useScene
                 .getState()
                 .updateNode(draft.guide.id, vectorizedGuide(draft.guide, draft.vectors))
-            useScene
-              .getState()
-              .createNodes(
-                created.map((node) => ({
-                  node,
-                  parentId: (node.parentId ?? level.id) as AnyNodeId,
-                })),
-              )
+            const joins = network?.existingChanges
+            if (joins && (joins.create.length || joins.update.length || joins.delete.length))
+              useScene.getState().applyNodeChanges(joins)
+            useScene.getState().createNodes(
+              created.map((node) => ({
+                node,
+                parentId: (node.parentId ?? level.id) as AnyNodeId,
+              })),
+            )
             const focusedId = useViewer.getState().focusedUnitId
             const unit = focusedId ? useScene.getState().nodes[focusedId] : undefined
             if (
@@ -556,7 +589,9 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
               ? created.filter((n) => n.type === 'slab').length
               : draft.kind === 'unit'
                 ? created.filter((n) => n.type === 'unit').length
-                : created.length
+                : draft.kind === 'door' || draft.kind === 'window'
+                  ? created.filter((n) => n.type === draft.kind).length
+                  : created.length
           set({
             draft: {
               ...draft,
@@ -568,7 +603,18 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
             },
             hover: null,
             error: '',
-            message: `${count} ${draft.kind === 'balcony' ? (count === 1 ? 'balcony' : 'balconies') : draft.kind === 'unit' ? (count === 1 ? 'unit' : 'units') : 'elements'} created. Select more shapes or choose Done.`,
+            message: `${count} ${
+              draft.kind === 'balcony'
+                ? count === 1
+                  ? 'balcony'
+                  : 'balconies'
+                : draft.kind === 'unit' ||
+                    draft.kind === 'door' ||
+                    draft.kind === 'window' ||
+                    draft.kind === 'prop'
+                  ? `${draft.kind}${count === 1 ? '' : 's'}`
+                  : 'elements'
+            } created. Select more shapes or choose Done.`,
           })
           return
         }

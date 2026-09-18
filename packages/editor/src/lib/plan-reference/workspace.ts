@@ -1,10 +1,19 @@
-
-import { imagePointToLevel, strokeFootprint } from '@pascal-app/core/building'
 import type { GuideNode, LevelNode } from '@pascal-app/core'
-import type { BalconyOptions } from '@pascal-app/core/building'
-import { alignPlanReferences, measuredPlanScale, type PlanImage, type PlanPoint, type PlanSegment, type PlanTransform } from './calibration'
+import type {
+  BalconyOptions,
+  SymbolGrouping,
+  OutlinePrimitiveKind,
+} from '@pascal-app/core/building'
+import { imagePointToLevel, strokeFootprint } from '@pascal-app/core/building'
+import {
+  alignPlanReferences,
+  measuredPlanScale,
+  type PlanImage,
+  type PlanPoint,
+  type PlanSegment,
+  type PlanTransform,
+} from './calibration'
 import type { CalibratedReference, ReferenceImage } from './guides'
-import type { OutlinePrimitiveKind } from '@pascal-app/core/building'
 import type { ReferenceOutline } from './outlines'
 import {
   type PlanSelectionMode,
@@ -46,7 +55,7 @@ export type ShapeDraft = WorkspaceBase & {
   shapes: PlanShape[]
   selectionMode?: PlanSelectionMode
   selected: string[]
-  kind: OutlinePrimitiveKind
+  kind: WorkspaceKind
   height: number
   thickness: number
   floorHeight: number
@@ -54,19 +63,71 @@ export type ShapeDraft = WorkspaceBase & {
   fillAsWall: boolean
   /** Endpoints closer than this (plan metres) close as if they touched. */
   gapTolerance: number
+  /**
+   * Whitespace regions flood-filled from the plan raster. Kept apart from
+   * `shapes`: Areas mode rebuilds faces from shape edges under new ids, so a
+   * fill mixed in there would lose its id and bleed its outline into the faces.
+   */
+  fills?: PlanShape[]
+  /** Door/window/prop: one element per cluster of touching shapes (default) or per shape. */
+  symbolGrouping?: SymbolGrouping
+  /** Prop: the catalog item standing in for each selected symbol. */
+  propItemId?: string
+  /** Prop: extra quarter turns on top of the long-side alignment (the front is ambiguous). */
+  propTurns?: number
   balcony?: BalconyOptions
   traceOptions?: TraceOptions
   vectors?: { svg: string; outlines: ReferenceOutline[]; method: string; options?: TraceOptions }
 }
 export type PlanWorkspaceDraft = ReferenceDraft | ShapeDraft
+/** Catalog props are placed from symbols but are not outline primitives, so core never sees them. */
+export type WorkspaceKind = OutlinePrimitiveKind | 'prop'
 export { pointInPlanPolygon } from './selection-geometry'
+
+// Stable identity per (faces, fills) pair so memoised previews do not rebuild every render.
+const areaCandidates = new WeakMap<PlanShape[], WeakMap<PlanShape[], PlanShape[]>>()
+const NO_FILLS: PlanShape[] = []
+/**
+ * Areas mode offers, next to the faces built from the plan's edges, the plan's
+ * stroked paths as they are (walls are usually drawn as one line with a stroke
+ * width, which only Source used to expose) and any flood-filled rooms.
+ */
 export function workspaceShapeCandidates(draft: ShapeDraft) {
-  return planSelectionGeometry(
+  const geometry = planSelectionGeometry(
     draft.shapes,
     draft.selectionMode ?? 'source',
     draft.transform.metersPerPixel,
     draft.gapTolerance ? draft.gapTolerance / draft.transform.metersPerPixel : 0,
   )
+  if (draft.selectionMode !== 'areas') return geometry
+  const fills = draft.fills ?? NO_FILLS
+  let byFills = areaCandidates.get(geometry)
+  if (!byFills) areaCandidates.set(geometry, (byFills = new WeakMap()))
+  let merged = byFills.get(fills)
+  if (!merged) {
+    const strokes = draft.shapes.filter((s) => s.stroke && s.boundary !== false)
+    merged = strokes.length || fills.length ? [...geometry, ...strokes, ...fills] : geometry
+    byFills.set(fills, merged)
+  }
+  return merged
+}
+/**
+ * Re-anchors an open shapes session on its live guide after the guide moved,
+ * rescaled or rotated. Traced shapes are image pixels, so they only still fit
+ * when the image keeps its dimensions; otherwise the session must close.
+ */
+export function followGuide(draft: ShapeDraft, live: GuideNode): ShapeDraft | null {
+  let view: ReferenceView
+  try {
+    view = guideReference(live)
+  } catch {
+    return null
+  }
+  if (view.image.width !== draft.image.width || view.image.height !== draft.image.height)
+    return null
+  // The commit guard compares the scene against `originals`; accepting the
+  // live guide here is what lets Create run after the follow.
+  return { ...draft, guide: live, image: view.image, transform: view.transform, originals: [live] }
 }
 export type ReferenceView = {
   image: ReferenceImage
@@ -241,7 +302,14 @@ export function workspaceHandles(draft: PlanWorkspaceDraft): PlanHandle[] {
     const points = workspaceShapeCandidates(draft)
       .filter((s) => draft.selected.includes(s.id))
       .flatMap((s) => s.points.map((p) => imagePointToLevel(p, draft.image, draft.transform)))
-    if (!points.length || draft.kind === 'zone' || draft.kind === 'unit' || draft.kind === 'door' || draft.kind === 'window')
+    if (
+      !points.length ||
+      draft.kind === 'zone' ||
+      draft.kind === 'unit' ||
+      draft.kind === 'door' ||
+      draft.kind === 'window' ||
+      draft.kind === 'prop'
+    )
       return []
     const xs = points.map((p) => p[0]),
       zs = points.map((p) => p[1])

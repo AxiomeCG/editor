@@ -1,10 +1,12 @@
 'use client'
 
+import type { ItemNode } from '@pascal-app/core'
 import { imagePointToLevel } from '@pascal-app/core/building'
 
-import { useAssetUrl, useViewer } from '@pascal-app/viewer'
+import { resolveCdnUrl, useAssetUrl, useViewer } from '@pascal-app/viewer'
 import { useEffect, useRef } from 'react'
-import { type PlanPoint } from '../../lib/plan-reference/calibration'
+import type { PlanPoint } from '../../lib/plan-reference/calibration'
+import { PLAN_CANDIDATE_COLOR, PLAN_SELECTED_COLOR } from '../../lib/plan-reference/overlay-colors'
 import { useWorkspacePreview } from '../../lib/plan-reference/use-workspace-preview'
 import { contourSvgPath } from '../../lib/plan-reference/vectorize'
 import {
@@ -30,6 +32,54 @@ function PlanImage({
 }) {
   const resolved = useAssetUrl(url)
   return resolved ? <image href={resolved} {...props} /> : null
+}
+
+/**
+ * A prop about to be created: its top-down plan image (when the catalog has
+ * one) in its real footprint, with a chevron on the front edge — local +Z, the
+ * side the floor plan draws wall-side items facing away from their wall.
+ */
+function PropFootprint2D({ node }: { node: ItemNode }) {
+  const [width = 1, , depth = 1] = node.asset.dimensions ?? []
+  const url = resolveCdnUrl(node.asset.floorPlanUrl)
+  const tip = Math.min(width, depth) * 0.18
+  return (
+    <g
+      transform={`translate(${node.position[0]} ${node.position[2]}) rotate(${(-node.rotation[1] * 180) / Math.PI})`}
+    >
+      {url && (
+        <image
+          href={url}
+          x={-width / 2}
+          y={-depth / 2}
+          width={width}
+          height={depth}
+          preserveAspectRatio="none"
+          opacity={0.9}
+        />
+      )}
+      <rect
+        x={-width / 2}
+        y={-depth / 2}
+        width={width}
+        height={depth}
+        fill={PLAN_CANDIDATE_COLOR}
+        fillOpacity={url ? 0.08 : 0.2}
+        stroke={PLAN_CANDIDATE_COLOR}
+        strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke"
+      />
+      <path
+        d={`M${-tip} ${depth / 2 - tip}L0 ${depth / 2}L${tip} ${depth / 2 - tip}`}
+        fill="none"
+        stroke={PLAN_CANDIDATE_COLOR}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </g>
+  )
 }
 
 export function PlanWorkspace2D() {
@@ -86,6 +136,7 @@ function PlanWorkspaceContent2D() {
   const references = workspaceReferences(draft),
     handles = workspaceHandles(draft)
   const active = references.at(-1)!
+  const selectedIds = new Set(draft.mode === 'shapes' ? draft.selected : [])
   const measurements =
     draft.mode === 'references' && draft.stage !== 'adjust' ? activeReferencePoints(draft) : []
   const points = measurements.map((p) => imagePointToLevel(p, active.image, active.transform))
@@ -125,28 +176,65 @@ function PlanWorkspaceContent2D() {
           </g>
         )
       })}
-      {contours.map((s) => {
-        const selected = draft.mode === 'shapes' && draft.selected.includes(s.id)
-        // Source strokes keep their authored width: the overlay must match the
-        // plan's own linework, not collapse every line to one screen pixel.
-        const sourceWidth = (s.strokeWidth ?? 1) * active.transform.metersPerPixel
-        return (
-          <path
-            key={s.id}
-            d={contourSvgPath(s)}
-            fillRule="evenodd"
-            fill={s.stroke ? 'none' : '#8b5cf6'}
-            fillOpacity={selected ? 0.4 : 0.06}
-            stroke="#8b5cf6"
-            strokeOpacity={s.stroke && !selected ? 0.7 : 1}
-            strokeWidth={s.stroke ? sourceWidth * (selected ? 1.5 : 1) : selected ? 2.5 : 1.2}
-            vectorEffect={s.stroke ? undefined : 'non-scaling-stroke'}
-          />
-        )
-      })}
+      {/* Selected shapes paint last so their amber edge is never covered by a neighbour. */}
+      {[...contours]
+        .sort((a, b) => Number(selectedIds.has(a.id)) - Number(selectedIds.has(b.id)))
+        .map((s) => {
+          const selected = selectedIds.has(s.id)
+          const color = selected ? PLAN_SELECTED_COLOR : PLAN_CANDIDATE_COLOR
+          const d = contourSvgPath(s)
+          // Candidates are hairlines: the plan image beneath already shows the ink,
+          // and painting every line at its width buries it. Only a picked stroke
+          // shows its authored width. Edges of filled shapes have none — a "1 px"
+          // fallback is several centimetres on small-unit SVG plans.
+          const authoredWidth =
+            selected && s.stroke && s.strokeWidth
+              ? s.strokeWidth * active.transform.metersPerPixel
+              : 0
+          return (
+            <g key={s.id}>
+              {authoredWidth > 0 && (
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={color}
+                  strokeOpacity={0.45}
+                  strokeWidth={authoredWidth}
+                  strokeLinecap="butt"
+                  strokeLinejoin="miter"
+                />
+              )}
+              {selected && s.stroke && !authoredWidth && (
+                // A screen-space halo keeps a picked hairline visible at any zoom.
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={color}
+                  strokeOpacity={0.3}
+                  strokeWidth={6}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              <path
+                d={d}
+                fillRule="evenodd"
+                fill={s.stroke ? 'none' : color}
+                fillOpacity={selected ? 0.3 : 0.035}
+                stroke={color}
+                strokeOpacity={selected ? 1 : 0.5}
+                strokeWidth={selected ? (s.stroke && authoredWidth ? 1.25 : 2) : 1}
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          )
+        })}
       {draft.mode === 'shapes' && draft.kind === 'balcony' && <BalconyPreviewPlan nodes={nodes} />}
       {nodes.map((n) =>
-        n.type === 'wall' ? (
+        n.type === 'item' ? (
+          <PropFootprint2D key={n.id} node={n} />
+        ) : n.type === 'wall' ? (
           <line
             key={[...n.start, ...n.end].join(':')}
             x1={n.start[0]}

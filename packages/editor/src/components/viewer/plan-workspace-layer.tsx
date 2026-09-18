@@ -1,8 +1,7 @@
 'use client'
 
-import { imagePointToLevel } from '@pascal-app/core/building'
-
 import { type AnyNode, sceneRegistry } from '@pascal-app/core'
+import { imagePointToLevel } from '@pascal-app/core/building'
 import { useAssetUrl, useViewer } from '@pascal-app/viewer'
 import { type CameraControlsImpl, Html } from '@react-three/drei'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
@@ -27,7 +26,8 @@ import {
   Vector3,
 } from 'three'
 import { LineBasicNodeMaterial, MeshBasicNodeMaterial } from 'three/webgpu'
-import { type PlanPoint } from '../../lib/plan-reference/calibration'
+import type { PlanPoint } from '../../lib/plan-reference/calibration'
+import { PLAN_CANDIDATE_COLOR, PLAN_SELECTED_COLOR } from '../../lib/plan-reference/overlay-colors'
 import { useWorkspacePreview } from '../../lib/plan-reference/use-workspace-preview'
 import {
   activeReferencePoints,
@@ -83,7 +83,7 @@ function ResolvedPlanPlane({ view, url }: { view: ReferenceView; url: string }) 
 function PlanLines({
   lines,
   opacity = 1,
-  color = '#8b5cf6',
+  color = PLAN_CANDIDATE_COLOR,
 }: {
   lines: [number, number, number][][]
   opacity?: number
@@ -118,11 +118,13 @@ function PlanPolygon({
   holes,
   opacity,
   height = Y,
+  color = PLAN_CANDIDATE_COLOR,
 }: {
   points: PlanPoint[]
   holes?: PlanPoint[][]
   opacity: number
   height?: number
+  color?: string
 }) {
   const geometry = useMemo(() => {
     const shape = new Shape(points.map((p) => new Vector2(p[0], -p[1])))
@@ -132,13 +134,13 @@ function PlanPolygon({
   const material = useMemo(
     () =>
       new MeshBasicNodeMaterial({
-        color: '#8b5cf6',
+        color,
         side: DoubleSide,
         transparent: true,
         depthWrite: false,
         depthTest: false,
       }),
-    [],
+    [color],
   )
   useEffect(() => () => geometry.dispose(), [geometry])
   useEffect(() => () => material.dispose(), [material])
@@ -226,6 +228,41 @@ function ShapeVolume({ draft, nodes }: { draft: PlanWorkspaceDraft; nodes: AnyNo
   useEffect(() => () => material.dispose(), [material])
   if (draft.mode !== 'shapes') return null
   if (draft.kind === 'balcony') return <BalconyPreviewGeometry nodes={nodes} />
+  // Props keep their real height: the extrusion height scale below is for walls and slabs.
+  if (draft.kind === 'prop')
+    return (
+      <group>
+        {nodes.map((n) => {
+          if (n.type !== 'item') return null
+          const [width = 1, height = 1, depth = 1] = n.asset.dimensions ?? []
+          return (
+            <group
+              key={n.id}
+              position={[n.position[0], Y, n.position[2]]}
+              rotation={[0, n.rotation[1], 0]}
+            >
+              <mesh
+                position={[0, height / 2, 0]}
+                material={material}
+                renderOrder={904}
+                raycast={() => {}}
+              >
+                <boxGeometry args={[width, height, depth]} />
+              </mesh>
+              {/* Front tab on local +Z, matching the 2D chevron. */}
+              <mesh
+                position={[0, 0.01, depth / 2 + 0.06]}
+                material={material}
+                renderOrder={904}
+                raycast={() => {}}
+              >
+                <boxGeometry args={[Math.min(width, 0.4), 0.02, 0.12]} />
+              </mesh>
+            </group>
+          )
+        })}
+      </group>
+    )
   return (
     <group scale={[1, draft.height / draft.floorHeight, 1]}>
       {nodes.map((n) => {
@@ -392,9 +429,15 @@ function PlanWorkspaceContent3D() {
     active = views.at(-1)!
   const handles = workspaceHandles(draft)
   const point3 = (p: PlanPoint, h = Y): [number, number, number] => [p[0], h, p[1]]
-  const lines: [number, number, number][][] = contours.flatMap((s) =>
-    [s.points, ...s.holes].map((loop) => [...loop, loop[0]!].map((p) => point3(p))),
-  )
+  const selectedIds = new Set(draft.mode === 'shapes' ? draft.selected : [])
+  const outline = (s: (typeof contours)[number]) =>
+    [s.points, ...s.holes].map((loop) =>
+      (s.stroke ? loop : [...loop, loop[0]!]).map((p) => point3(p)),
+    )
+  const lines: [number, number, number][][] = contours
+    .filter((s) => !selectedIds.has(s.id))
+    .flatMap(outline)
+  const selectedLines = contours.filter((s) => selectedIds.has(s.id)).flatMap(outline)
   if (draft.mode === 'references' && draft.stage !== 'adjust') {
     const points = activeReferencePoints(draft)
     const line = points.map((p) => imagePointToLevel(p, active.image, active.transform))
@@ -435,12 +478,14 @@ function PlanWorkspaceContent3D() {
             key={s.id}
             points={s.points}
             holes={s.holes}
-            opacity={draft.mode === 'shapes' && draft.selected.includes(s.id) ? 0.4 : 0.06}
+            color={selectedIds.has(s.id) ? PLAN_SELECTED_COLOR : PLAN_CANDIDATE_COLOR}
+            opacity={selectedIds.has(s.id) ? 0.32 : 0.04}
           />
         ),
       )}
       <ShapeVolume draft={draft} nodes={nodes} />
-      <PlanLines lines={lines} />
+      <PlanLines lines={lines} opacity={0.6} />
+      <PlanLines lines={selectedLines} color={PLAN_SELECTED_COLOR} />
       {handles.map((h) => (
         <PlanMarker key={h.id} handle={h} />
       ))}
