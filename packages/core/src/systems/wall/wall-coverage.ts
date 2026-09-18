@@ -1,4 +1,5 @@
 import type { WallNode } from '../../schema/nodes/wall'
+import { GROUND_SUPPORT_ID } from '../../hooks/spatial-grid/support-host-id'
 
 type Point = [number, number]
 type Interval = [number, number]
@@ -11,6 +12,8 @@ export type SharedWallSegment = {
 
 const MIN_SEGMENT = 0.001
 const TRACE_TOLERANCE = 0.01
+/** Offcut pieces shorter than this from collinear overlaps are dropped, not committed as walls. */
+const WALL_SHARD_MIN_LENGTH = 0.02
 const at = (w: WallNode, t: number): Point => [
   w.start[0] + (w.end[0] - w.start[0]) * t,
   w.start[1] + (w.end[1] - w.start[1]) * t,
@@ -23,7 +26,9 @@ const project = (p: Point, w: WallNode) =>
 function overlap(w: WallNode, other: WallNode): Interval | null {
   if (
     w.parentId !== other.parentId ||
-    w.supportSlabId !== other.supportSlabId ||
+    // Hand-drawn ground walls persist no support host; a missing support IS
+    // the level base, so it must match 'ground' or SVG dedup never sees it.
+    (w.supportSlabId ?? GROUND_SUPPORT_ID) !== (other.supportSlabId ?? GROUND_SUPPORT_ID) ||
     Math.abs((w.supportOffset ?? 0) - (other.supportOffset ?? 0)) > 0.00001 ||
     Math.abs(w.curveOffset ?? 0) > 0.00001 ||
     Math.abs(other.curveOffset ?? 0) > 0.00001
@@ -95,7 +100,9 @@ export function planSharedWallSegments(
     for (let i = 1; i < cuts.length; i++) {
       const from = cuts[i - 1]!,
         to = cuts[i]!
-      if ((to - from) * length(wall) < MIN_SEGMENT) continue
+      // A collinear near-duplicate leaves sub-centimetre offcut intervals on
+      // either side of the shared span; committing them renders as shards.
+      if ((to - from) * length(wall) < WALL_SHARD_MIN_LENGTH) continue
       const midpoint = (from + to) / 2
       const covered = peers.filter((p) => p.interval[0] <= midpoint && p.interval[1] >= midpoint)
       const retained = covered.find((p) => p.existing)

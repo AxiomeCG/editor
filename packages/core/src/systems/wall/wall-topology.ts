@@ -16,6 +16,10 @@ import type { WallPlanPoint } from './wall-move'
 const WALL_MIN_LENGTH = 0.01
 const WALL_SPLIT_ENDPOINT_EPSILON = 0.02
 const WALL_INTERSECTION_EPSILON = 1e-6
+// SVG traces rarely land the interior centreline exactly on the exterior
+// centreline; within a quarter of either wall's thickness the two walls are
+// the same wall and the duplicate must be suppressed, not shattered.
+const WALL_COVER_CENTERLINE_TOLERANCE = 0.025
 
 export type WallTopologyChanges = {
   create: Array<{ node: AnyNode; parentId?: AnyNodeId }>
@@ -74,11 +78,15 @@ function wallSegmentsCoverSegment(start: WallPlanPoint, end: WallPlanPoint, wall
   const intervals: Array<[number, number]> = []
   for (const wall of walls) {
     if (Math.abs(wall.curveOffset ?? 0) > WALL_INTERSECTION_EPSILON) continue
+    const centerlineTolerance = Math.min(
+      WALL_COVER_CENTERLINE_TOLERANCE,
+      (wall.thickness ?? 0.1) / 4,
+    )
     const startDistance =
       Math.abs((wall.start[0] - start[0]) * dz - (wall.start[1] - start[1]) * dx) / length
     const endDistance =
       Math.abs((wall.end[0] - start[0]) * dz - (wall.end[1] - start[1]) * dx) / length
-    if (startDistance > WALL_INTERSECTION_EPSILON || endDistance > WALL_INTERSECTION_EPSILON) {
+    if (startDistance > centerlineTolerance || endDistance > centerlineTolerance) {
       continue
     }
 

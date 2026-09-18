@@ -4,6 +4,7 @@ import { encodeTerrainField } from '../../lib/terrain-codec'
 import { applyHeightPatch, createTerrainField, flattenPatch } from '../../lib/terrain-field'
 import { type AnyNode, type AnyNodeId, DoorNode, WallNode } from '../../schema'
 import { getWallArcData, getWallCurveFrameAt } from './wall-curve'
+import { planSharedWallSegments } from './wall-coverage'
 import { planWallInsertion, planWallSplitAtPoint } from './wall-topology'
 
 const LEVEL_ID = 'level_topology' as AnyNodeId
@@ -57,6 +58,48 @@ function terrainSceneNodes() {
 }
 
 describe('planWallInsertion', () => {
+  test('rejects a duplicate traced over an existing wall within a quarter thickness', () => {
+    // The exterior wall was hand-drawn; an SVG unit trace retraces it 12 mm
+    // off — outside the old exact-cover tolerance, producing a double wall.
+    const exterior = WallNode.parse({
+      id: 'wall_exterior',
+      parentId: LEVEL_ID,
+      start: [0, 0],
+      end: [6, 0],
+      thickness: 0.2,
+    })
+
+    const result = planWallInsertion(nodeMap([exterior]), {
+      levelId: LEVEL_ID,
+      start: [0, 0.012],
+      end: [6, 0.012],
+      joinRadius: 0,
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'covered-existing-wall' })
+  })
+
+  test('still splits a parallel wall clearly offset from the draft', () => {
+    // A real interior wall beyond the quarter-thickness tolerance must remain
+    // a genuine crossing (split), not be suppressed as a duplicate.
+    const first = WallNode.parse({
+      id: 'wall_parallel',
+      parentId: LEVEL_ID,
+      start: [0, 0.15],
+      end: [6, 0.15],
+      thickness: 0.2,
+    })
+
+    const result = planWallInsertion(nodeMap([first]), {
+      levelId: LEVEL_ID,
+      start: [0, 0],
+      end: [6, 0],
+      joinRadius: 0,
+    })
+
+    expect(result.ok).toBe(true)
+  })
+
   test('rejects the whole insertion when adjacent crossings would create a sliver', () => {
     const first = WallNode.parse({
       id: 'wall_first',
@@ -453,5 +496,80 @@ describe('planWallSplitAtPoint', () => {
     expect(result.plan.changes.delete).toEqual([host.id])
     expect(result.plan.changes.create).toHaveLength(2)
     expect(nodes[host.id]).toBe(host)
+  })
+})
+
+describe('planSharedWallSegments', () => {
+  test('matches SVG walls against hand-drawn walls despite the persisted ground host difference', () => {
+    // Hand-drawn ground walls persist no supportSlabId; SVG-generated walls
+    // persist 'ground'. Same level base either way — they must dedup.
+    const incoming = WallNode.parse({
+      id: 'wall_svg',
+      parentId: LEVEL_ID,
+      start: [0, 0],
+      end: [6, 0],
+      thickness: 0.2,
+      supportSlabId: GROUND_SUPPORT_ID,
+    })
+    const existing = WallNode.parse({
+      id: 'wall_hand_drawn',
+      parentId: LEVEL_ID,
+      start: [0, 0],
+      end: [6, 0],
+      thickness: 0.2,
+    })
+
+    const planned = planSharedWallSegments([incoming], [existing], 3)
+
+    expect(planned.segments).toHaveLength(0)
+    expect(planned.reusedWallIds).toEqual(['wall_hand_drawn'])
+  })
+
+  test('drops collinear offcut shards shorter than a shard-length wall piece', () => {
+    // An SVG unit trace whose edge runs 5 mm short of / past the hand-drawn
+    // exterior wall used to commit 5 mm wall shards at both ends.
+    const incoming = WallNode.parse({
+      id: 'wall_draft',
+      parentId: LEVEL_ID,
+      start: [-0.005, 0],
+      end: [6.005, 0],
+      thickness: 0.2,
+    })
+    const existing = WallNode.parse({
+      id: 'wall_exterior',
+      parentId: LEVEL_ID,
+      start: [0, 0],
+      end: [6, 0],
+      thickness: 0.2,
+    })
+
+    const planned = planSharedWallSegments([incoming], [existing], 3)
+
+    expect(planned.segments).toHaveLength(0)
+    expect(planned.reusedWallIds).toEqual(['wall_exterior'])
+  })
+
+  test('keeps the genuinely uncovered remainder when the overlap ends well inside the wall', () => {
+    const incoming = WallNode.parse({
+      id: 'wall_draft',
+      parentId: LEVEL_ID,
+      start: [0, 0],
+      end: [6, 0],
+      thickness: 0.2,
+    })
+    const existing = WallNode.parse({
+      id: 'wall_exterior',
+      parentId: LEVEL_ID,
+      start: [0, 0],
+      end: [2, 0],
+      thickness: 0.2,
+    })
+
+    const planned = planSharedWallSegments([incoming], [existing], 3)
+
+    expect(planned.segments).toHaveLength(1)
+    expect(planned.segments[0]!.start[0]).toBeCloseTo(2, 5)
+    expect(planned.segments[0]!.end[0]).toBeCloseTo(6, 5)
+    expect(planned.reusedWallIds).toEqual(['wall_exterior'])
   })
 })
