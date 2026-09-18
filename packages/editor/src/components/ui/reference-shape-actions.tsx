@@ -1,6 +1,6 @@
 'use client'
 
-import { type GuideNode, type LevelNode, loadAssetUrl } from '@pascal-app/core'
+import { type GuideNode, type LevelNode, loadAssetUrl, runAsSingleSceneHistoryStep, useScene } from '@pascal-app/core'
 import { useEffect, useRef, useState } from 'react'
 import type { ReferenceOutline } from '../../lib/plan-reference/outlines'
 import { extractSvgPlanShapes } from '../../lib/plan-reference/svg-shapes'
@@ -21,7 +21,10 @@ export function ReferenceShapeActions({ guide, level }: { guide: GuideNode; leve
       'image/svg+xml' ||
     /\.svg(?:$|\?)/i.test(guide.url) ||
     guide.url.startsWith('data:image/svg+xml')
-  const cached = guide.metadata.planVectors as { outlines?: ReferenceOutline[] } | undefined
+  const cached = guide.metadata.planVectors as
+    | { outlines?: ReferenceOutline[]; originalUrl?: string }
+    | undefined
+  const originalUrl = cached?.originalUrl
   const choose = async (file?: File) => {
     request.current?.abort()
     const controller = new AbortController()
@@ -57,6 +60,9 @@ export function ReferenceShapeActions({ guide, level }: { guide: GuideNode; leve
             d.shapes.map((s) => ({ ...s, area: 0 })),
             view.image.width,
             view.image.height,
+            // Imported SVGs mix wall lines with furniture polygons; the light
+            // area look keeps the overlay readable either way.
+            undefined,
           )
           usePlanWorkspace
             .getState()
@@ -116,6 +122,24 @@ export function ReferenceShapeActions({ guide, level }: { guide: GuideNode; leve
           />
         </label>
       </div>
+      {originalUrl && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-full px-1 text-[11px]"
+          onClick={() => {
+            if (useScene.getState().readOnly) return
+            runAsSingleSceneHistoryStep(useScene, () =>
+              useScene.getState().updateNode(guide.id, {
+                url: originalUrl,
+                metadata: { ...guide.metadata, planVectors: undefined },
+              } as Partial<GuideNode>),
+            )
+          }}
+        >
+          Restore original image
+        </Button>
+      )}
       {!guide.scaleReference && (
         <p className="text-[11px] leading-4 text-muted-foreground">
           Uses the current plan scale. Calibration is optional.

@@ -177,6 +177,22 @@ export function contourSvgPath(contour: Pick<VectorContour, 'points' | 'holes' |
     .join('')
 }
 
-export function contoursSvg(contours: VectorContour[], width: number, height: number) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${contours.map((c, i) => `<path id="contour-${i}" fill="${c.stroke ? 'none' : '#171717'}"${c.stroke ? ` stroke="#171717" stroke-width="${c.strokeWidth ?? 1}"` : ''} fill-rule="evenodd" d="${contourSvgPath(c)}"/>`).join('')}</svg>`
+export function contoursSvg(
+  contours: VectorContour[],
+  width: number,
+  height: number,
+  mode?: TraceOptions['mode'],
+) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${contours
+    .map((c, i) => {
+      if (c.stroke)
+        return `<path id="contour-${i}" fill="none" stroke="#171717" stroke-width="${c.strokeWidth ?? 1}" d="${contourSvgPath(c)}"/>`
+      // Ink contours enclose the drawn linework itself, so filling them dark
+      // reproduces the plan. Room contours are areas: filling them dark turned
+      // the whole guide near-black — render them as light floorplan fills.
+      return mode === 'ink'
+        ? `<path id="contour-${i}" fill="#171717" fill-rule="evenodd" d="${contourSvgPath(c)}"/>`
+        : `<path id="contour-${i}" fill="#E4E4E7" stroke="#52525B" stroke-width="0.4" fill-rule="evenodd" d="${contourSvgPath(c)}"/>`
+    })
+    .join('')}</svg>`
 }
