@@ -27,6 +27,7 @@ import {
 } from '../lib/plan-reference/guides'
 import { getPlanMatchAnchors, guideReferenceDraft } from '../lib/plan-reference/matching'
 import { type ReferenceOutline, sampleReferenceOutline } from '../lib/plan-reference/outlines'
+import { pickWhitespaceRegion } from '../lib/plan-reference/whitespace'
 import {
   type PlanSelectionMode,
   planSelectionGeometry,
@@ -73,6 +74,7 @@ type WorkspaceState = {
   message: string
   focusRevision: number
   previousGuides: boolean
+  whitespaceBusy: boolean
   openGuide: (level: LevelNode, target: GuideNode, anchor?: GuideNode) => void
   openReferences: (
     level: LevelNode,
@@ -94,6 +96,7 @@ type WorkspaceState = {
   chooseImage: (role: 'floorplan' | 'sitemap', image: ReferenceImage) => void
   setStage: (stage: ReferenceStage) => void
   pick: (point: PlanPoint) => void
+  pickWhitespace: (pixel: PlanPoint) => Promise<void>
   correct: (value: { scale?: number; rotation?: number }) => void
   focus: () => void
   close: (saved?: boolean) => void
@@ -137,6 +140,7 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
     message: '',
     focusRevision: 0,
     previousGuides: true,
+    whitespaceBusy: false,
     openGuide: (level, target, anchor) => {
       try {
         begin(guideReferenceDraft(level, target, useScene.getState().nodes, anchor))
@@ -234,7 +238,7 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
           selected: [],
           includeHoles: true,
           fillAsWall: false,
-          gapTolerance: 0.1,
+          gapTolerance: 0,
           kind: 'walls',
           height: constrainReferenceHeight(floorHeight, floorHeight),
           thickness: 0.18,
@@ -346,6 +350,42 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
             points,
         }
       }),
+    pickWhitespace: async (pixel) => {
+      const draft = get().draft
+      if (
+        draft?.mode !== 'shapes' ||
+        draft.selectionMode !== 'areas' ||
+        get().whitespaceBusy ||
+        useScene.getState().readOnly
+      )
+        return
+      set({ whitespaceBusy: true, error: '' })
+      try {
+        const shape = await pickWhitespaceRegion({
+          url: draft.image.url,
+          seedPixel: pixel,
+          metersPerPixel: draft.transform.metersPerPixel,
+          gapToleranceMeters: draft.gapTolerance,
+        })
+        if (!shape) {
+          set({ error: 'Click inside a room of the plan — not on a line or outside it.' })
+          return
+        }
+        get().change((d) =>
+          d.mode === 'shapes'
+            ? {
+                ...d,
+                shapes: [...d.shapes, shape],
+                selected: d.selected.includes(shape.id) ? d.selected : [...d.selected, shape.id],
+              }
+            : d,
+        )
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Could not fill this region.' })
+      } finally {
+        set({ whitespaceBusy: false })
+      }
+    },
     correct: ({ scale, rotation }) =>
       get().change((d) => {
         if (d.mode !== 'references' || !d.baseline) return d
@@ -472,9 +512,13 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
                   ? 'Plan slab'
                   : draft.kind === 'balcony'
                     ? 'Plan balcony'
-                    : draft.kind === 'unit'
-                      ? 'Apartment'
-                      : 'Plan zone',
+                    : draft.kind === 'door'
+                      ? 'Plan door'
+                      : draft.kind === 'window'
+                        ? 'Plan window'
+                        : draft.kind === 'unit'
+                          ? 'Apartment'
+                          : 'Plan zone',
           })
           if (!created.length)
             throw Error('These walls already exist. Select another outline or cancel.')

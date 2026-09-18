@@ -10,9 +10,49 @@ export async function vectorizePlanImage(
   options: TraceOptions,
   signal: AbortSignal,
 ) {
-  const url = await loadAssetUrl(image.url)
-  if (!url) throw Error('The plan file is unavailable.')
-  const response = await fetch(url, { signal })
+  const raster = await rasterizePlanImage(image.url, signal)
+  const raw = await traceInWorker({
+    rgba: raster.rgba,
+    width: raster.width,
+    height: raster.height,
+    options,
+    signal,
+  })
+  const toSource = (p: [number, number]): [number, number] => [
+    (p[0] * image.width) / raster.width,
+    (p[1] * image.height) / raster.height,
+  ]
+  const contours = raw.map((c) => ({
+    ...c,
+    points: c.points.map(toSource),
+    holes: c.holes.map((h) => h.map(toSource)),
+  }))
+  if (!contours.length)
+    throw Error('No usable contours found. Try a higher threshold or trace spaces instead.')
+  return {
+    contours,
+    svg: contoursSvg(contours, image.width, image.height, options.mode),
+    method: 'local-raster-contours-v1',
+    options,
+  }
+}
+
+export type PlanRaster = {
+  rgba: Uint8ClampedArray
+  width: number
+  height: number
+  /** Raster pixels per source-image pixel. */
+  scale: number
+}
+
+/** Decode + rasterize a plan at a trace-friendly resolution (sharp for SVGs). */
+export async function rasterizePlanImage(
+  url: string,
+  signal?: AbortSignal,
+): Promise<PlanRaster> {
+  const resolved = await loadAssetUrl(url)
+  if (!resolved) throw Error('The plan file is unavailable.')
+  const response = await fetch(resolved, { signal })
   if (!response.ok) throw Error('The reference image could not be loaded.')
   const blob = await response.blob()
   // Decoding through an <img> (not createImageBitmap) lets SVG plans rasterize
@@ -22,9 +62,9 @@ export async function vectorizePlanImage(
     const img = new Image()
     img.src = objectUrl
     await img.decode()
-    if (signal.aborted) throw new DOMException('Cancelled', 'AbortError')
-    const sourceWidth = img.naturalWidth || image.width,
-      sourceHeight = img.naturalHeight || image.height
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError')
+    const sourceWidth = img.naturalWidth || 1,
+      sourceHeight = img.naturalHeight || 1
     const longest = Math.max(sourceWidth, sourceHeight)
     // Small plans (e.g. 80-unit SVGs) must be traced large enough that wall
     // strokes survive the minimum-area filter; large ones are capped.
@@ -39,25 +79,7 @@ export async function vectorizePlanImage(
     context.fillStyle = 'white'
     context.fillRect(0, 0, width, height)
     context.drawImage(img, 0, 0, width, height)
-    const rgba = context.getImageData(0, 0, width, height).data
-    const raw = await traceInWorker({ rgba, width, height, options, signal })
-    const toSource = (p: [number, number]): [number, number] => [
-      (p[0] * image.width) / width,
-      (p[1] * image.height) / height,
-    ]
-    const contours = raw.map((c) => ({
-      ...c,
-      points: c.points.map(toSource),
-      holes: c.holes.map((h) => h.map(toSource)),
-    }))
-    if (!contours.length)
-      throw Error('No usable contours found. Try a higher threshold or trace spaces instead.')
-    return {
-      contours,
-      svg: contoursSvg(contours, image.width, image.height, options.mode),
-      method: 'local-raster-contours-v1',
-      options,
-    }
+    return { rgba: context.getImageData(0, 0, width, height).data, width, height, scale }
   } finally {
     URL.revokeObjectURL(objectUrl)
   }

@@ -238,6 +238,8 @@ export function bindPlanWorkspacePointer(adapter: WorkspacePointerAdapter) {
                   }
                 : d,
             )
+          else if (draft.mode === 'shapes' && draft.selectionMode === 'areas')
+            void usePlanWorkspace.getState().pickWhitespace(pixel)
         }
       }
     }
