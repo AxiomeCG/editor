@@ -503,3 +503,23 @@ export {
 export { planWallDivision, planWallRectangle, wallRectangleCorners } from './systems/wall/wall-operations'
 export { resolveWallLoop, type WallLoopScope } from './systems/wall/wall-loop'
 export { planSharedWallSegments, type SharedWallSegment } from './systems/wall/wall-coverage'
+export {
+  DEFAULT_FACADE_UNIT,
+  FACADE_UNIT_CLEARANCE,
+  FACADE_UNIT_MAX_REPEAT,
+  FACADE_UNIT_MIN_OPENING,
+  FacadeUnitSchema,
+  resolveFacadeUnit,
+  type FacadeUnit,
+  type FacadeUnitBay,
+  type FacadeUnitHeightMode,
+  type FacadeUnitHorizontalAnchor,
+  type FacadeUnitObstacle,
+  type FacadeUnitOpening,
+  type FacadeUnitPlacement,
+  type FacadeUnitRemainder,
+  type FacadeUnitResolution,
+  type FacadeUnitResolutionOptions,
+  type FacadeUnitVerticalAnchor,
+  type FacadeUnitWidthMode,
+} from './systems/facade/facade-unit'
