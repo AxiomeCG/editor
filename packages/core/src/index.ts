@@ -480,6 +480,7 @@ export {
   resolveWallEffectiveHeight,
   resolveWallTop,
 } from './systems/wall/wall-top'
+export { planarizeWallBatch, type WallBatchPlan } from './systems/wall/wall-batch'
 export {
   planWallInsertion,
   planWallSplitAtPoint,

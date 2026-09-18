@@ -375,7 +375,7 @@ function remapAttachment(
   } as Partial<AnyNode>
 }
 
-function splitWall(
+export function splitWall(
   wall: WallNode,
   splitParameters: number[],
   nodes: Record<AnyNodeId, AnyNode>,
