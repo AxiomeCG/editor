@@ -491,6 +491,26 @@ export {
   planWallInsertion,
   planWallSplitAtPoint,
 } from './systems/wall/wall-topology'
+export {
+  DEFAULT_FACADE_UNIT,
+  FACADE_UNIT_CLEARANCE,
+  FACADE_UNIT_MAX_REPEAT,
+  FACADE_UNIT_MIN_OPENING,
+  FacadeUnitSchema,
+  resolveFacadeUnit,
+  type FacadeUnit,
+  type FacadeUnitBay,
+  type FacadeUnitHeightMode,
+  type FacadeUnitHorizontalAnchor,
+  type FacadeUnitObstacle,
+  type FacadeUnitOpening,
+  type FacadeUnitPlacement,
+  type FacadeUnitRemainder,
+  type FacadeUnitResolution,
+  type FacadeUnitResolutionOptions,
+  type FacadeUnitVerticalAnchor,
+  type FacadeUnitWidthMode,
+} from './systems/facade/facade-unit'
 export type { SceneGraph } from './utils/clone-scene-graph'
 export { cloneLevelSubtree, cloneSceneGraph, forkSceneGraph } from './utils/clone-scene-graph'
 export { isObject } from './utils/types'
