@@ -241,7 +241,8 @@ export function workspaceHandles(draft: PlanWorkspaceDraft): PlanHandle[] {
     const points = workspaceShapeCandidates(draft)
       .filter((s) => draft.selected.includes(s.id))
       .flatMap((s) => s.points.map((p) => imagePointToLevel(p, draft.image, draft.transform)))
-    if (!points.length || draft.kind === 'zone' || draft.kind === 'unit') return []
+    if (!points.length || draft.kind === 'zone' || draft.kind === 'unit' || draft.kind === 'door' || draft.kind === 'window')
+      return []
     const xs = points.map((p) => p[0]),
       zs = points.map((p) => p[1])
     return [

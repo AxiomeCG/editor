@@ -125,18 +125,25 @@ function PlanWorkspaceContent2D() {
           </g>
         )
       })}
-      {contours.map((s) => (
-        <path
-          key={s.id}
-          d={contourSvgPath(s)}
-          fillRule="evenodd"
-          fill="#8b5cf6"
-          fillOpacity={draft.mode === 'shapes' && draft.selected.includes(s.id) ? 0.4 : 0.06}
-          stroke="#8b5cf6"
-          strokeWidth={draft.mode === 'shapes' && draft.selected.includes(s.id) ? 2 : 1}
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
+      {contours.map((s) => {
+        const selected = draft.mode === 'shapes' && draft.selected.includes(s.id)
+        // Source strokes keep their authored width: the overlay must match the
+        // plan's own linework, not collapse every line to one screen pixel.
+        const sourceWidth = (s.strokeWidth ?? 1) * active.transform.metersPerPixel
+        return (
+          <path
+            key={s.id}
+            d={contourSvgPath(s)}
+            fillRule="evenodd"
+            fill={s.stroke ? 'none' : '#8b5cf6'}
+            fillOpacity={selected ? 0.4 : 0.06}
+            stroke="#8b5cf6"
+            strokeOpacity={s.stroke && !selected ? 0.7 : 1}
+            strokeWidth={s.stroke ? sourceWidth * (selected ? 1.5 : 1) : selected ? 2.5 : 1.2}
+            vectorEffect={s.stroke ? undefined : 'non-scaling-stroke'}
+          />
+        )
+      })}
       {draft.mode === 'shapes' && draft.kind === 'balcony' && <BalconyPreviewPlan nodes={nodes} />}
       {nodes.map((n) =>
         n.type === 'wall' ? (

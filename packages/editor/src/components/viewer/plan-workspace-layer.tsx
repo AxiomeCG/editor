@@ -429,14 +429,16 @@ function PlanWorkspaceContent3D() {
           <PlanPlane view={v} />
         </Suspense>
       ))}
-      {contours.map((s) => (
-        <PlanPolygon
-          key={s.id}
-          points={s.points}
-          holes={s.holes}
-          opacity={draft.mode === 'shapes' && draft.selected.includes(s.id) ? 0.4 : 0.06}
-        />
-      ))}
+      {contours.map((s) =>
+        s.stroke ? null : (
+          <PlanPolygon
+            key={s.id}
+            points={s.points}
+            holes={s.holes}
+            opacity={draft.mode === 'shapes' && draft.selected.includes(s.id) ? 0.4 : 0.06}
+          />
+        ),
+      )}
       <ShapeVolume draft={draft} nodes={nodes} />
       <PlanLines lines={lines} />
       {handles.map((h) => (

@@ -14,6 +14,7 @@ import { useVectorizePlan } from '../../lib/plan-reference/use-vectorize-plan'
 import { useWorkspacePreview } from '../../lib/plan-reference/use-workspace-preview'
 import {
   activeReferencePoints,
+  guideReference,
   type ReferenceDraft,
   workspaceShapeCandidates,
 } from '../../lib/plan-reference/workspace'
@@ -354,20 +355,52 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
         editor.isPreviewMode ||
         editor.isFirstPersonMode ||
         editor.workspaceMode === 'studio'
-      )
+      ) {
         state.close()
-      else if (d.mode === 'shapes' && d.floorHeight !== getStoredLevelHeight(level)) {
-        const floorHeight = getStoredLevelHeight(level)
-        state.change(() => ({
-          ...d,
-          floorHeight,
-          height:
-            d.kind === 'balcony'
-              ? balconyElevation(d.height, floorHeight, d.balcony ?? DEFAULT_BALCONY)
-              : d.height === d.floorHeight
-                ? floorHeight
-                : constrainReferenceHeight(d.height, floorHeight),
-        }))
+        return
+      }
+      if (d.mode === 'shapes') {
+        const live = scene.nodes[d.guide.id]
+        if (live?.type !== 'guide') {
+          state.close()
+          return
+        }
+        // A rescaled / moved / replaced guide must drag the whole workspace
+        // with it; otherwise the overlay and its commits land at the old frame.
+        if (JSON.stringify(live) !== JSON.stringify(d.guide)) {
+          try {
+            const view = guideReference(live)
+            state.change((current) =>
+              current.mode === 'shapes' && current.guide.id === live.id
+                ? { ...current, guide: live, image: view.image, transform: view.transform }
+                : current,
+            )
+          } catch {
+            state.close()
+          }
+          return
+        }
+        if (d.floorHeight !== getStoredLevelHeight(level)) {
+          const floorHeight = getStoredLevelHeight(level)
+          state.change((current) =>
+            current.mode === 'shapes'
+              ? {
+                  ...current,
+                  floorHeight,
+                  height:
+                    current.kind === 'balcony'
+                      ? balconyElevation(
+                          current.height,
+                          floorHeight,
+                          current.balcony ?? DEFAULT_BALCONY,
+                        )
+                      : current.height === current.floorHeight
+                        ? floorHeight
+                        : constrainReferenceHeight(current.height, floorHeight),
+                }
+              : current,
+          )
+        }
       }
     }
     const subscriptions = [
@@ -467,7 +500,9 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
                 ? 'Click individual edges to select them.'
                 : 'Original shapes · Alt-click to pick underneath.'}
           </p>
-          {(draft.selectionMode === 'areas' || draft.selectionMode === 'edges') && (
+          {(draft.selectionMode === 'areas' || draft.selectionMode === 'edges') &&
+            draft.kind !== 'door' &&
+            draft.kind !== 'window' && (
             <SliderControl
               label="Close gaps up to"
               value={draft.gapTolerance}
@@ -481,6 +516,9 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
                 state.change((d) => (d.mode === 'shapes' ? { ...d, gapTolerance } : d))
               }
             />
+          )}
+          {state.whitespaceBusy && draft.selectionMode === 'areas' && (
+            <p className="px-2 text-[11px] leading-4 text-muted-foreground">Filling region…</p>
           )}
           {draft.traceOptions && (
             <div className="space-y-1 border-b border-border pb-2">
@@ -576,8 +614,8 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
               </Button>
             </div>
           )}
-          <div className="grid grid-cols-3 rounded-md bg-muted p-0.5" role="group" aria-label="Primitive type">
-            {(['walls', 'slab', 'zone', 'unit', 'balcony'] as const).map((kind) => (
+          <div className="grid grid-cols-4 rounded-md bg-muted p-0.5" role="group" aria-label="Primitive type">
+            {(['walls', 'slab', 'zone', 'unit', 'balcony', 'door', 'window'] as const).map((kind) => (
               <Button
                 key={kind}
                 size="sm"
@@ -610,10 +648,20 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
                       ? 'Balcony'
                       : kind === 'unit'
                         ? 'Unit'
-                      : 'Zone'}
+                        : kind === 'door'
+                          ? 'Door'
+                          : kind === 'window'
+                            ? 'Window'
+                            : 'Zone'}
               </Button>
             ))}
           </div>
+          {(draft.kind === 'door' || draft.kind === 'window') && (
+            <p className="px-2 text-[11px] leading-4 text-muted-foreground">
+              Select the symbol shapes — they merge into one opening. It must sit on a wall or span a
+              gap between two wall ends; a missing wall segment is created for you.
+            </p>
+          )}
           {draft.kind === 'unit' && (
             <p className="px-2 text-[11px] leading-4 text-muted-foreground">
               Each area becomes an apartment Unit. Use the Units list to assign its room zones.
@@ -649,6 +697,8 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
             </>
           )}
           {!draft.fillAsWall &&
+            draft.kind !== 'door' &&
+            draft.kind !== 'window' &&
             candidates.some((s) => draft.selected.includes(s.id) && s.holes.length) && (
             <label className="flex items-center gap-2 px-2 text-[11px] text-muted-foreground">
               <input
@@ -683,7 +733,10 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
               bands; other shapes still outline their contours.
             </p>
           )}
-          {draft.kind !== 'zone' && draft.kind !== 'unit' && (
+          {draft.kind !== 'zone' &&
+            draft.kind !== 'unit' &&
+            draft.kind !== 'door' &&
+            draft.kind !== 'window' && (
             <>
               <SliderControl
                 label={draft.kind === 'balcony' ? 'Deck elevation' : 'Height'}
@@ -738,7 +791,10 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
               )}
             </>
           )}
-          {draft.kind !== 'balcony' && draft.kind !== 'unit' &&
+          {draft.kind !== 'balcony' &&
+            draft.kind !== 'unit' &&
+            draft.kind !== 'door' &&
+            draft.kind !== 'window' &&
             (draft.kind === 'walls' ||
               candidates.some((s) => s.stroke && draft.selected.includes(s.id))) && (
               <SliderControl

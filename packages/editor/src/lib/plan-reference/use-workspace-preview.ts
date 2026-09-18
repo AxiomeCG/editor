@@ -29,13 +29,12 @@ export function useWorkspacePreview(draft: PlanWorkspaceDraft | null) {
     }
     return shapes.map((s) => ({
       id: s.id,
-      points: (s.stroke
-        ? strokeFootprint(s.points, (thickness ?? 0.18) / transform.metersPerPixel)
-        : s.points
-      ).map((p) => imagePointToLevel(p, ref, transform)),
+      points: s.points,
       holes: includeHoles || fillAsWall
         ? s.holes.map((h) => h.map((p) => imagePointToLevel(p, ref, transform)))
         : [],
+      stroke: s.stroke,
+      strokeWidth: s.strokeWidth,
     }))
   }, [guide, shapes, includeHoles, fillAsWall, thickness])
   const existingWalls = useScene(
@@ -70,7 +69,8 @@ export function useWorkspacePreview(draft: PlanWorkspaceDraft | null) {
           height: kind === 'balcony' ? balconyHeight : floorHeight,
           balcony,
           name: 'Plan preview',
-          existingWalls: kind === 'balcony' ? existingWalls : [],
+          existingWalls:
+            kind === 'balcony' || kind === 'door' || kind === 'window' ? existingWalls : [],
           contextNodes,
         }),
         error: '',
