@@ -233,6 +233,7 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
           })),
           selected: [],
           includeHoles: true,
+          fillAsWall: false,
           kind: 'walls',
           height: constrainReferenceHeight(floorHeight, floorHeight),
           thickness: 0.18,
@@ -441,8 +442,14 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
             level,
             shapes: workspaceShapeCandidates(draft)
               .filter((s) => draft.selected.includes(s.id))
-              .map((s) => ({ ...s, holes: draft.includeHoles ? s.holes : [] })),
+              .map((s) => ({
+                ...s,
+                // The fill-as-wall reading needs the inner contours: they are
+                // what makes a band a band, not extra walls to outline.
+                holes: draft.fillAsWall || draft.includeHoles ? s.holes : [],
+              })),
             kind: draft.kind,
+            fillAsWall: draft.fillAsWall,
             height:
               draft.kind === 'balcony'
                 ? balconyElevation(

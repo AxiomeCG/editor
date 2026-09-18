@@ -633,7 +633,8 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
               </p>
             </>
           )}
-          {candidates.some((s) => draft.selected.includes(s.id) && s.holes.length) && (
+          {!draft.fillAsWall &&
+            candidates.some((s) => draft.selected.includes(s.id) && s.holes.length) && (
             <label className="flex items-center gap-2 px-2 text-[11px] text-muted-foreground">
               <input
                 type="checkbox"
@@ -646,6 +647,26 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
               />
               Include inner contours
             </label>
+          )}
+          {draft.kind === 'walls' && (
+            <label className="flex items-center gap-2 px-2 text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={draft.fillAsWall}
+                onChange={(e) =>
+                  state.change((d) =>
+                    d.mode === 'shapes' ? { ...d, fillAsWall: e.target.checked } : d,
+                  )
+                }
+              />
+              Fill = wall body
+            </label>
+          )}
+          {draft.kind === 'walls' && draft.fillAsWall && (
+            <p className="px-2 text-[11px] leading-4 text-muted-foreground">
+              Selected areas become one thick wall along the band's centreline. Works on uniform-width
+              bands; other shapes still outline their contours.
+            </p>
           )}
           {draft.kind !== 'zone' && draft.kind !== 'unit' && (
             <>

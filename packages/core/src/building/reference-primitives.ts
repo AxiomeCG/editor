@@ -1,5 +1,6 @@
 import { type AnyNode, type GuideNode, type LevelNode, SlabNode, UnitNode, WallNode, ZoneNode } from '../schema'
 import { getStoredLevelHeight } from '../services/storey'
+import { bandWallCenterline } from './reference-bands'
 import { planSharedWallSegments } from '../systems/wall/wall-coverage'
 import { type BalconyOptions, balconyFromEdge, createBalconyParts, DEFAULT_BALCONY } from './balcony'
 import { cleanReferencePoints, imagePointToLevel, type ReferencePoint as PlanPoint } from './reference-transform'
@@ -53,6 +54,7 @@ export function outlinePrimitiveNodes({
   balcony = DEFAULT_BALCONY,
   existingWalls = [],
   contextNodes = {},
+  fillAsWall = false,
 }: {
   guide: GuideNode
   level: LevelNode
@@ -67,6 +69,7 @@ export function outlinePrimitiveNodes({
   balcony?: BalconyOptions
   existingWalls?: readonly WallNode[]
   contextNodes?: Record<string, AnyNode>
+  fillAsWall?: boolean
 }): AnyNode[] {
   const ref = guide.metadata.planReference as
     | { width: number; height: number; assetId?: string; sourceUrl?: string }
@@ -182,18 +185,30 @@ export function outlinePrimitiveNodes({
     throw Error(
       'This outline needs too many wall segments. Start with a zone or slab, then trace the facade panels.',
     )
+  const buildWall = (start: PlanPoint, end: PlanPoint, wallThickness: number, index: number) =>
+    WallNode.parse({
+      parentId: level.id,
+      name: `${name} · wall ${index + 1}`,
+      start,
+      end,
+      thickness: wallThickness,
+      ...(extrusion < floorHeight ? { height: extrusion } : {}),
+      supportSlabId: 'ground',
+      metadata,
+    })
+  if (fillAsWall && !stroke) {
+    const band = bandWallCenterline(polygon, cutouts)
+    if (band)
+      return band.points.flatMap((a, i) => {
+        const end = band.points[(i + 1) % band.points.length]!
+        return band.closed || i < band.points.length - 1
+          ? [buildWall(a, end, band.thickness, i)]
+          : []
+      })
+  }
   return [stroke ? centreline : polygon, ...cutouts].flatMap((loop) =>
     (stroke ? loop.slice(0, -1) : loop).map((a, i) =>
-      WallNode.parse({
-        parentId: level.id,
-        name: `${name} · wall ${i + 1}`,
-        start: a,
-        end: loop[(i + 1) % loop.length],
-        thickness,
-        ...(extrusion < floorHeight ? { height: extrusion } : {}),
-        supportSlabId: 'ground',
-        metadata,
-      }),
+      buildWall(a, loop[(i + 1) % loop.length]!, thickness, i),
     ),
   )
 }

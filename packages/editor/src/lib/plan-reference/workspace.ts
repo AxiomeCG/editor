@@ -51,6 +51,7 @@ export type ShapeDraft = WorkspaceBase & {
   thickness: number
   floorHeight: number
   includeHoles: boolean
+  fillAsWall: boolean
   balcony?: BalconyOptions
   traceOptions?: TraceOptions
   vectors?: { svg: string; outlines: ReferenceOutline[]; method: string; options?: TraceOptions }

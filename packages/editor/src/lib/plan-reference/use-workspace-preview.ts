@@ -15,7 +15,8 @@ export function useWorkspacePreview(draft: PlanWorkspaceDraft | null) {
   const level = useScene((s) => (shape ? s.nodes[shape.levelId] : undefined)) as
     | LevelNode
     | undefined
-  const { guide, selected, kind, thickness, floorHeight, includeHoles, balcony } = shape ?? {}
+  const { guide, selected, kind, thickness, floorHeight, includeHoles, balcony, fillAsWall } =
+    shape ?? {}
   const balconyHeight = kind === 'balcony' ? shape?.height : undefined
   const shapes = shape ? workspaceShapeCandidates(shape) : undefined
   const contours = useMemo(() => {
@@ -32,11 +33,11 @@ export function useWorkspacePreview(draft: PlanWorkspaceDraft | null) {
         ? strokeFootprint(s.points, (thickness ?? 0.18) / transform.metersPerPixel)
         : s.points
       ).map((p) => imagePointToLevel(p, ref, transform)),
-      holes: includeHoles
+      holes: includeHoles || fillAsWall
         ? s.holes.map((h) => h.map((p) => imagePointToLevel(p, ref, transform)))
         : [],
     }))
-  }, [guide, shapes, includeHoles, thickness])
+  }, [guide, shapes, includeHoles, fillAsWall, thickness])
   const existingWalls = useScene(
     useShallow((s) =>
       kind === 'walls' || kind === 'balcony'
@@ -59,8 +60,12 @@ export function useWorkspacePreview(draft: PlanWorkspaceDraft | null) {
           level,
           shapes: shapes
             .filter((s) => selected.includes(s.id))
-            .map((s) => ({ ...s, holes: includeHoles ? s.holes : [] })),
+            .map((s) => ({
+              ...s,
+              holes: fillAsWall || includeHoles ? s.holes : [],
+            })),
           kind,
+          fillAsWall,
           thickness,
           height: kind === 'balcony' ? balconyHeight : floorHeight,
           balcony,
@@ -82,6 +87,7 @@ export function useWorkspacePreview(draft: PlanWorkspaceDraft | null) {
     thickness,
     floorHeight,
     includeHoles,
+    fillAsWall,
     balcony,
     balconyHeight,
     existingWalls,
