@@ -52,6 +52,8 @@ export type ShapeDraft = WorkspaceBase & {
   floorHeight: number
   includeHoles: boolean
   fillAsWall: boolean
+  /** Endpoints closer than this (plan metres) close as if they touched. */
+  gapTolerance: number
   balcony?: BalconyOptions
   traceOptions?: TraceOptions
   vectors?: { svg: string; outlines: ReferenceOutline[]; method: string; options?: TraceOptions }
@@ -63,6 +65,7 @@ export function workspaceShapeCandidates(draft: ShapeDraft) {
     draft.shapes,
     draft.selectionMode ?? 'source',
     draft.transform.metersPerPixel,
+    draft.gapTolerance ? draft.gapTolerance / draft.transform.metersPerPixel : 0,
   )
 }
 export type ReferenceView = {

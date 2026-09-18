@@ -234,6 +234,7 @@ export const usePlanWorkspace = create<WorkspaceState>((set, get) => {
           selected: [],
           includeHoles: true,
           fillAsWall: false,
+          gapTolerance: 0.1,
           kind: 'walls',
           height: constrainReferenceHeight(floorHeight, floorHeight),
           thickness: 0.18,

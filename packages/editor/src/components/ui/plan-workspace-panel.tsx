@@ -467,6 +467,21 @@ export function PlanWorkspacePanel({ style }: { style?: CSSProperties }) {
                 ? 'Click individual edges to select them.'
                 : 'Original shapes · Alt-click to pick underneath.'}
           </p>
+          {(draft.selectionMode === 'areas' || draft.selectionMode === 'edges') && (
+            <SliderControl
+              label="Close gaps up to"
+              value={draft.gapTolerance}
+              min={0}
+              max={2}
+              step={0.01}
+              precision={2}
+              unit="m"
+              manageHistory={false}
+              onChange={(gapTolerance) =>
+                state.change((d) => (d.mode === 'shapes' ? { ...d, gapTolerance } : d))
+              }
+            />
+          )}
           {draft.traceOptions && (
             <div className="space-y-1 border-b border-border pb-2">
               <div className="flex gap-1" role="group" aria-label="Vectorize regions">

@@ -34,7 +34,7 @@ type Vertex = { point: PlanPoint; outgoing: number[] }
 type Edge = { from: number; to: number; reverse: number; angle: number }
 const cache = new WeakMap<
   PlanShape[],
-  Map<number, Partial<Record<'areas' | 'edges', PlanShape[]>>>
+  Map<string, Partial<Record<'areas' | 'edges', PlanShape[]>>>
 >()
 
 /** A sitemap's unit outline can include a terrace. Visible dividers define smaller pickable faces. */
@@ -42,21 +42,24 @@ export function planSelectionGeometry(
   shapes: PlanShape[],
   mode: PlanSelectionMode,
   metersPerPixel = 1,
+  gapTolerancePixels = 0,
 ): PlanShape[] {
   if (mode === 'source') return shapes
   if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0)
     throw Error('Calibrate this reference first.')
+  const key = `${metersPerPixel}:${gapTolerancePixels}`
   let scales = cache.get(shapes)
   if (!scales) {
     scales = new Map()
     cache.set(shapes, scales)
   }
-  let geometry = scales.get(metersPerPixel)
+  let geometry = scales.get(key)
   if (!geometry) {
     geometry = {}
-    scales.set(metersPerPixel, geometry)
+    scales.set(key, geometry)
   }
-  if (!geometry[mode]) geometry[mode] = buildSelectionGeometry(shapes, mode, metersPerPixel)
+  if (!geometry[mode])
+    geometry[mode] = buildSelectionGeometry(shapes, mode, metersPerPixel, gapTolerancePixels)
   return geometry[mode]!
 }
 
@@ -64,8 +67,12 @@ function buildSelectionGeometry(
   shapes: PlanShape[],
   mode: 'areas' | 'edges',
   metersPerPixel: number,
+  gapTolerancePixels = 0,
 ) {
   const epsilon = Math.max(0.02, 0.00101 / metersPerPixel)
+  // Hairline cracks between exported strokes must not leak one face into the
+  // next: endpoints within the bridge tolerance close as if they touched.
+  const bridge = Math.max(epsilon, gapTolerancePixels)
   const segments: Segment[] = []
   // Outlined text is filled geometry too. When the SVG supplies explicit strokes,
   // use those as room dividers; keep every filled path available in Source mode.
@@ -91,17 +98,17 @@ function buildSelectionGeometry(
       v = subtract(p, s.a),
       l2 = d[0] ** 2 + d[1] ** 2
     const t = (v[0] * d[0] + v[1] * d[1]) / l2
-    if (t >= 0 && t <= 1 && Math.abs(cross(v, d)) / Math.sqrt(l2) <= epsilon) s.cuts.push(t)
+    if (t >= 0 && t <= 1 && Math.abs(cross(v, d)) / Math.sqrt(l2) <= bridge) s.cuts.push(t)
   }
   for (let i = 0; i < segments.length; i++) {
     const a = segments[i]!,
       r = subtract(a.b, a.a)
     for (let j = i + 1; j < segments.length; j++) {
       const b = segments[j]!
-      if (Math.min(b.a[0], b.b[0]) > Math.max(a.a[0], a.b[0]) + epsilon) break
+      if (Math.min(b.a[0], b.b[0]) > Math.max(a.a[0], a.b[0]) + bridge) break
       if (
-        Math.min(b.a[1], b.b[1]) > Math.max(a.a[1], a.b[1]) + epsilon ||
-        Math.min(a.a[1], a.b[1]) > Math.max(b.a[1], b.b[1]) + epsilon
+        Math.min(b.a[1], b.b[1]) > Math.max(a.a[1], a.b[1]) + bridge ||
+        Math.min(a.a[1], a.b[1]) > Math.max(b.a[1], b.b[1]) + bridge
       )
         continue
       const s = subtract(b.b, b.a),
@@ -125,12 +132,12 @@ function buildSelectionGeometry(
   const vertices: Vertex[] = [],
     buckets = new Map<string, number[]>()
   const vertex = (p: PlanPoint) => {
-    const x = Math.floor(p[0] / epsilon),
-      y = Math.floor(p[1] / epsilon)
+    const x = Math.floor(p[0] / bridge),
+      y = Math.floor(p[1] / bridge)
     for (let dx = -1; dx <= 1; dx++)
       for (let dy = -1; dy <= 1; dy++) {
         for (const id of buckets.get(`${x + dx},${y + dy}`) ?? [])
-          if (distance(vertices[id]!.point, p) <= epsilon) return id
+          if (distance(vertices[id]!.point, p) <= bridge) return id
       }
     const id = vertices.length,
       key = `${x},${y}`
