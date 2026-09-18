@@ -1,12 +1,13 @@
-import { type AnyNode, type GuideNode, type LevelNode, SlabNode, UnitNode, WallNode, ZoneNode } from '../schema'
+import { type AnyNode, type GuideNode, type LevelNode, DoorNode, SlabNode, UnitNode, WallNode, WindowNode, ZoneNode } from '../schema'
 import { getStoredLevelHeight } from '../services/storey'
-import { bandWallCenterline } from './reference-bands'
+import { bandWallCenterline, simplifyClosedLoop } from './reference-bands'
+import { openingFootprint, planOpeningPlacement } from './reference-openings'
 import { planSharedWallSegments } from '../systems/wall/wall-coverage'
 import { type BalconyOptions, balconyFromEdge, createBalconyParts, DEFAULT_BALCONY } from './balcony'
 import { cleanReferencePoints, imagePointToLevel, type ReferencePoint as PlanPoint } from './reference-transform'
 import { strokeFootprint } from './reference-strokes'
 
-export type OutlinePrimitiveKind = 'zone' | 'unit' | 'slab' | 'walls' | 'balcony'
+export type OutlinePrimitiveKind = 'zone' | 'unit' | 'slab' | 'walls' | 'balcony' | 'door' | 'window'
 
 /** Dragging snaps to the storey; exact numeric input only clamps to its bounds. */
 export function constrainReferenceHeight(value: number, floorHeight: number, snap = false) {
@@ -22,7 +23,9 @@ function validatePolygon(points: PlanPoint[], minArea = 0.01) {
     points.length > 1024 ||
     points.some((p) => p.some((v) => !Number.isFinite(v)))
   )
-    throw Error('Choose a simple closed outline with 3–1024 corners.')
+    throw Error(
+      'Choose a simple closed outline with 3–1024 corners. For a window or door symbol use the Door or Window kind.',
+    )
   const cross = (a: PlanPoint, b: PlanPoint, c: PlanPoint) =>
     (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
   const edges = points.map((a, i) => [a, points[(i + 1) % points.length]!] as const)
@@ -34,10 +37,23 @@ function validatePolygon(points: PlanPoint[], minArea = 0.01) {
       const [a, b] = edges[i]!,
         [c, d] = edges[j]!
       if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0)
-        throw Error('Self-intersecting outlines cannot become building elements.')
+        throw Error(
+          'Self-intersecting outlines cannot become building elements. For a window or door symbol use the Door or Window kind.',
+        )
     }
   const area = Math.abs(edges.reduce((sum, [a, b]) => sum + a[0] * b[1] - a[1] * b[0], 0)) / 2
   if (area < minArea) throw Error('The selected outline has no usable area.')
+}
+
+/** Dense traced outlines (curves, symbols) must fit the wall/polygon corner cap. */
+function fitPolygon(points: PlanPoint[]): PlanPoint[] {
+  let result = points,
+    tolerance = 0.002
+  while (result.length > 1000 && tolerance <= 2) {
+    result = simplifyClosedLoop(points, tolerance)
+    tolerance *= 2
+  }
+  return result
 }
 
 export function outlinePrimitiveNodes({
@@ -96,6 +112,7 @@ export function outlinePrimitiveNodes({
     position: [guide.position[0], guide.position[2]] as PlanPoint,
   }
   let polygon = cleanReferencePoints(points, transform.metersPerPixel, !stroke).map((p) => imagePointToLevel(p, image, transform))
+  if (!stroke) polygon = fitPolygon(polygon)
   if (
     !stroke &&
     polygon.length > 1 &&
@@ -115,7 +132,13 @@ export function outlinePrimitiveNodes({
     if (kind !== 'walls' && kind !== 'balcony') polygon = strokeFootprint(polygon, thickness)
   }
   if (!stroke || (kind !== 'walls' && kind !== 'balcony')) validatePolygon(polygon, 0.000001)
-  const cutouts = holes.map((hole) => cleanReferencePoints(hole, transform.metersPerPixel, true).map((p) => imagePointToLevel(p, image, transform)))
+  const cutouts = holes.map((hole) =>
+    fitPolygon(
+      cleanReferencePoints(hole, transform.metersPerPixel, true).map((p) =>
+        imagePointToLevel(p, image, transform),
+      ),
+    ),
+  )
   for (const hole of cutouts) validatePolygon(hole, 0.000001)
   if ((kind === 'zone' || kind === 'unit') && cutouts.length)
     throw Error(
@@ -131,6 +154,34 @@ export function outlinePrimitiveNodes({
       conversion: stroke ? 'svg-stroke' : 'polygon-approximation',
       reviewRequired: true,
     },
+  }
+  if (kind === 'door' || kind === 'window') {
+    const placement = planOpeningPlacement({
+      footprint: openingFootprint(points.map((p) => imagePointToLevel(p, image, transform))),
+      kind,
+      walls: existingWalls,
+    })
+    const bridgeWall = placement.bridge
+      ? WallNode.parse({
+          parentId: level.id,
+          name: `${name} · wall`,
+          start: placement.bridge.start,
+          end: placement.bridge.end,
+          thickness: placement.bridge.thickness,
+          supportSlabId: 'ground',
+          metadata,
+        })
+      : null
+    const hostId = bridgeWall?.id ?? placement.hostWall!.id
+    const opening = (kind === 'door' ? DoorNode : WindowNode).parse({
+      parentId: hostId,
+      wallId: hostId,
+      position: [placement.along, kind === 'door' ? 1.05 : 1.65, 0],
+      width: placement.width,
+      name,
+      metadata,
+    })
+    return [...(bridgeWall ? [bridgeWall] : []), opening]
   }
   if (kind === 'balcony') {
     const footprint = stroke
@@ -318,6 +369,16 @@ export function outlineBatchPrimitiveNodes({
     throw Error('Set a positive reference scale.')
   const plannedShapes =
     options.kind === 'balcony' ? balconyShapeChains(shapes, 0.001 / metersPerPixel) : shapes
+  // Opening symbols arrive as several SVG shapes (frame + glass, leaf + arc);
+  // they always compose ONE opening, sized by the group's overall footprint.
+  if (options.kind === 'door' || options.kind === 'window')
+    return outlinePrimitiveNodes({
+      ...options,
+      points: plannedShapes.flatMap((s) => s.points),
+      holes: [],
+      outlineId: plannedShapes.map((s) => s.id).join('+'),
+      name: options.name,
+    })
   const nodes = plannedShapes.flatMap((shape, i) =>
     outlinePrimitiveNodes({
       ...options,

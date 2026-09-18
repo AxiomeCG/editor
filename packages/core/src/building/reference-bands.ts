@@ -102,7 +102,7 @@ function rdp(points: PlanPoint[], epsilon: number): PlanPoint[] {
 }
 
 /** Simplify a closed loop while keeping the two split corners as anchors. */
-function simplifyClosed(points: PlanPoint[], epsilon: number): PlanPoint[] {
+export function simplifyClosedLoop(points: PlanPoint[], epsilon: number): PlanPoint[] {
   if (points.length < 4) return [...points]
   const half = Math.floor(points.length / 2)
   const first = rdp(points.slice(0, half + 1), epsilon)
@@ -163,7 +163,7 @@ function ringBand(outer: PlanPoint[], hole: PlanPoint[]): BandCenterline | null 
     const h = nearestOnLoop(o, hole, true).point
     return [(o[0] + h[0]) / 2, (o[1] + h[1]) / 2] as PlanPoint
   })
-  const points = simplifyClosed(midline, Math.max(0.01, Math.min(0.08, median / 5)))
+  const points = simplifyClosedLoop(midline, Math.max(0.01, Math.min(0.08, median / 5)))
   if (points.length < 3 || minimumEdge(points) < 0.01) return null
   return { points, closed: true, thickness: median }
 }
@@ -174,7 +174,7 @@ function solidBand(polygon: PlanPoint[]): BandCenterline | null {
     Math.abs(Math.min(...polygon.map((p) => p[0])) - Math.max(...polygon.map((p) => p[0])))
   const height =
     Math.abs(Math.min(...polygon.map((p) => p[1])) - Math.max(...polygon.map((p) => p[1])))
-  const quad = simplifyClosed(polygon, Math.max(0.01, 0.01 * Math.hypot(width, height)))
+  const quad = simplifyClosedLoop(polygon, Math.max(0.01, 0.01 * Math.hypot(width, height)))
   if (quad.length !== 4 || minimumEdge(quad) < THICKNESS_MIN) return null
   const edges = quad.map((a, i) => subtract(quad[(i + 1) % 4]!, a))
   const turns = edges.map((e, i) => cross(e, edges[(i + 1) % 4]!))
