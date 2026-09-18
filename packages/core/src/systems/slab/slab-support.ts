@@ -577,6 +577,10 @@ export function computeWallSlabSupport(
 
   for (const slab of slabs) {
     if (slab.polygon.length < 3) continue
+    // A balcony deck abuts its wall (and overlaps the face to hide the seam);
+    // it must not become that wall's floor and step its base. Only a node that
+    // names the deck as its support (its railings) stands on it.
+    if (slab.metadata?.balcony && slab.id !== preferredSlabId) continue
     const renderedPolygon = renderedSlabPolygon(slab, slabs, levelWalls)
 
     let supported = 0

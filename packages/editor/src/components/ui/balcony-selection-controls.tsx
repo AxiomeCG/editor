@@ -1,13 +1,22 @@
 'use client'
 import {
+  type AnyNode,
   type AnyNodeId,
   getStoredLevelHeight,
+  runAsSingleSceneHistoryStep,
   useLiveNodeOverrides,
   useScene,
+  type WallNode,
 } from '@pascal-app/core'
+import {
+  type BalconyOpeningKind,
+  type BalconyOptions,
+  DEFAULT_BALCONY,
+  planBalconyOpening,
+} from '@pascal-app/core/building'
 import { useViewer } from '@pascal-app/viewer'
+import { DoorOpen, Grid2x2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { type BalconyOptions, DEFAULT_BALCONY } from '@pascal-app/core/building'
 import {
   applyBalconyStyle,
   type BalconyStylePatch,
@@ -15,6 +24,7 @@ import {
   planBalconyStyle,
   selectedBalconies,
 } from '../../lib/balcony-style'
+import { ActionButton, ActionGroup } from './controls/action-button'
 import { PanelSection } from './controls/panel-section'
 import { SliderControl } from './controls/slider-control'
 import { previewMultiNodeFields } from './panels/multi-field-value'
@@ -63,6 +73,34 @@ export function BalconySelectionControls() {
       setError('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to update this balcony.')
+    }
+  }
+  // One opening per selected balcony, planned in turn so two decks on the same
+  // wall don't claim the same stretch; all in one undo step.
+  const addAccess = (kind: BalconyOpeningKind) => {
+    clearPreview()
+    try {
+      let working: Record<string, AnyNode> = useScene.getState().nodes
+      const openings = balconies.map(({ slab }) => {
+        const opening = planBalconyOpening(slab, working, kind)
+        const wall = working[opening.parentId!] as WallNode
+        working = {
+          ...working,
+          [opening.id]: opening,
+          [wall.id]: { ...wall, children: [...wall.children, opening.id] },
+        }
+        return opening
+      })
+      runAsSingleSceneHistoryStep(useScene, () =>
+        useScene
+          .getState()
+          .createNodes(openings.map((node) => ({ node, parentId: node.parentId as AnyNodeId }))),
+      )
+      // Select what was added so its size and position can be tuned right away.
+      useViewer.getState().setSelection({ selectedIds: openings.map((opening) => opening.id) })
+      setError('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Unable to add a ${kind}.`)
     }
   }
   const preview = (patch: BalconyStylePatch) => {
@@ -141,6 +179,25 @@ export function BalconySelectionControls() {
           disabled={disabled}
         />
       </fieldset>
+      <div className="space-y-1.5 border-border/50 border-t pt-2">
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Access: opens the wall the balcony runs along.
+        </p>
+        <ActionGroup>
+          <ActionButton
+            icon={<Grid2x2 className="size-3.5" />}
+            label="Add window"
+            disabled={disabled}
+            onClick={() => addAccess('window')}
+          />
+          <ActionButton
+            icon={<DoorOpen className="size-3.5" />}
+            label="Add French door"
+            disabled={disabled}
+            onClick={() => addAccess('door')}
+          />
+        </ActionGroup>
+      </div>
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

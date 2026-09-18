@@ -138,3 +138,48 @@ describe('computeWallSlabSupport preferred host', () => {
     expect(support.elevation).toBeCloseTo(0.6)
   })
 })
+
+describe('computeWallSlabSupport balcony decks', () => {
+  // Exterior wall on the room's y = 0 edge; the balcony deck projects outward
+  // and overlaps the wall face, like balconies built from a wall or a plan.
+  const wallLike = {
+    start: [0, 0] as [number, number],
+    end: [4, 0] as [number, number],
+    thickness: 0.2,
+  }
+  const floor = SlabNode.parse({ id: 'slab_floor', polygon: SQUARE, elevation: 0.05 })
+  const deck = (elevation: number) =>
+    SlabNode.parse({
+      id: 'slab_deck',
+      polygon: [
+        [0.5, -1.4],
+        [3.5, -1.4],
+        [3.5, 0.07],
+        [0.5, 0.07],
+      ],
+      elevation,
+      metadata: { balcony: { id: 'slab_deck', source: 'balcony-tool', role: 'deck' } },
+    })
+  const flat = (support: ReturnType<typeof computeWallSlabSupport>, elevation: number) =>
+    support.baseSegments.every((segment) => Math.abs(segment.elevation - elevation) < 1e-9)
+
+  it('does not step the wall base down to a deck level with the floor', () => {
+    // Plan balconies default to a deck at 0: the wall used to drop to it along the balcony.
+    const support = computeWallSlabSupport(wallLike, [floor, deck(0)], [])
+    expect(support.electedSlabId).toBe('slab_floor')
+    expect(flat(support, 0.05)).toBe(true)
+  })
+
+  it('does not lift a wall with no floor slab onto a raised deck', () => {
+    const support = computeWallSlabSupport(wallLike, [deck(0.3)], [])
+    expect(support.electedSlabId).toBeNull()
+    expect(flat(support, 0)).toBe(true)
+  })
+
+  it('still carries a node that names the deck as its support', () => {
+    const railing = { start: [0.5, -1.4] as [number, number], end: [3.5, -1.4] as [number, number] }
+    expect(
+      computeWallSlabSupport(railing, [floor, deck(0.3)], [], 'slab_deck').elevation,
+    ).toBeCloseTo(0.3)
+  })
+})

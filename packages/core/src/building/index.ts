@@ -1,5 +1,6 @@
 export * from './balcony'
 export * from './balcony-edges'
+export * from './balcony-access'
 export * from './reference-transform'
 export * from './reference-strokes'
 export * from './reference-bands'
