@@ -1,13 +1,44 @@
-import { type AnyNode, type GuideNode, type LevelNode, DoorNode, SlabNode, UnitNode, WallNode, WindowNode, ZoneNode } from '../schema'
+import {
+  type AnyNode,
+  DoorNode,
+  type GuideNode,
+  type LevelNode,
+  SlabNode,
+  UnitNode,
+  WallNode,
+  WindowNode,
+  ZoneNode,
+} from '../schema'
 import { getStoredLevelHeight } from '../services/storey'
-import { bandWallCenterline, simplifyClosedLoop } from './reference-bands'
-import { openingFootprint, planOpeningPlacement } from './reference-openings'
 import { planSharedWallSegments } from '../systems/wall/wall-coverage'
-import { type BalconyOptions, balconyFromEdge, createBalconyParts, DEFAULT_BALCONY } from './balcony'
-import { cleanReferencePoints, imagePointToLevel, type ReferencePoint as PlanPoint } from './reference-transform'
+import {
+  type BalconyOptions,
+  balconyFromEdge,
+  createBalconyParts,
+  DEFAULT_BALCONY,
+} from './balcony'
+import { bandWallCenterline, simplifyClosedLoop } from './reference-bands'
+import {
+  groupSymbolShapes,
+  type SymbolGrouping,
+  planOpeningPlacement,
+  SYMBOL_PART_GAP,
+} from './reference-openings'
 import { strokeFootprint } from './reference-strokes'
+import {
+  cleanReferencePoints,
+  imagePointToLevel,
+  type ReferencePoint as PlanPoint,
+} from './reference-transform'
 
-export type OutlinePrimitiveKind = 'zone' | 'unit' | 'slab' | 'walls' | 'balcony' | 'door' | 'window'
+export type OutlinePrimitiveKind =
+  | 'zone'
+  | 'unit'
+  | 'slab'
+  | 'walls'
+  | 'balcony'
+  | 'door'
+  | 'window'
 
 /** Dragging snaps to the storey; exact numeric input only clamps to its bounds. */
 export function constrainReferenceHeight(value: number, floorHeight: number, snap = false) {
@@ -100,7 +131,9 @@ export function outlinePrimitiveNodes({
   )
     throw Error('Select a reference with image dimensions on an editable floor.')
   if (guide.metadata.requireHumanCalibration === true && !guide.scaleReference)
-    throw Error('Human calibration required: pick two points and enter a known length before creating elements.')
+    throw Error(
+      'Human calibration required: pick two points and enter a known length before creating elements.',
+    )
   if (!Number.isFinite(guide.scale) || guide.scale <= 0)
     throw Error('Set a positive reference scale.')
   if (kind === 'unit' && (stroke || contextNodes[level.parentId ?? '']?.type !== 'building'))
@@ -111,7 +144,58 @@ export function outlinePrimitiveNodes({
     rotation: guide.rotation[1],
     position: [guide.position[0], guide.position[2]] as PlanPoint,
   }
-  let polygon = cleanReferencePoints(points, transform.metersPerPixel, !stroke).map((p) => imagePointToLevel(p, image, transform))
+  const metadata = {
+    referenceOutline: {
+      guideId: guide.id,
+      linked: true,
+      assetId: ref.assetId,
+      outlineId,
+      sourceUrl: ref.sourceUrl,
+      conversion:
+        kind === 'door' || kind === 'window'
+          ? 'svg-symbol'
+          : stroke
+            ? 'svg-stroke'
+            : 'polygon-approximation',
+      reviewRequired: true,
+    },
+  }
+  // A symbol is a point cloud (frame + glass, leaf + arc), never a polygon:
+  // it must not reach the outline cleanup and validation below.
+  if (kind === 'door' || kind === 'window') {
+    const placement = planOpeningPlacement({
+      points: points.map((p) => imagePointToLevel(p, image, transform)),
+      kind,
+      walls: existingWalls,
+    })
+    const bridgeWall = placement.bridge
+      ? WallNode.parse({
+          parentId: level.id,
+          name: `${name} · wall`,
+          start: placement.bridge.start,
+          end: placement.bridge.end,
+          thickness: placement.bridge.thickness,
+          supportSlabId: 'ground',
+          metadata,
+        })
+      : null
+    const hostId = bridgeWall?.id ?? placement.hostWall!.id
+    const opening = (kind === 'door' ? DoorNode : WindowNode).parse({
+      parentId: hostId,
+      wallId: hostId,
+      position: [placement.along, kind === 'door' ? 1.05 : 1.65, 0],
+      width: placement.width,
+      name,
+      // An opening follows its host wall (reference links rescale wall
+      // children), never the guide directly; as a linked outline it would be
+      // detached on every guide edit because its parent is a wall, not the level.
+      metadata: { referenceOutline: { ...metadata.referenceOutline, linked: false } },
+    })
+    return [...(bridgeWall ? [bridgeWall] : []), opening]
+  }
+  let polygon = cleanReferencePoints(points, transform.metersPerPixel, !stroke).map((p) =>
+    imagePointToLevel(p, image, transform),
+  )
   if (!stroke) polygon = fitPolygon(polygon)
   if (
     !stroke &&
@@ -144,45 +228,6 @@ export function outlinePrimitiveNodes({
     throw Error(
       'This contour has cutouts. Use a slab to preserve them; zones do not support holes.',
     )
-  const metadata = {
-    referenceOutline: {
-      guideId: guide.id,
-      linked: true,
-      assetId: ref.assetId,
-      outlineId,
-      sourceUrl: ref.sourceUrl,
-      conversion: stroke ? 'svg-stroke' : 'polygon-approximation',
-      reviewRequired: true,
-    },
-  }
-  if (kind === 'door' || kind === 'window') {
-    const placement = planOpeningPlacement({
-      footprint: openingFootprint(points.map((p) => imagePointToLevel(p, image, transform))),
-      kind,
-      walls: existingWalls,
-    })
-    const bridgeWall = placement.bridge
-      ? WallNode.parse({
-          parentId: level.id,
-          name: `${name} · wall`,
-          start: placement.bridge.start,
-          end: placement.bridge.end,
-          thickness: placement.bridge.thickness,
-          supportSlabId: 'ground',
-          metadata,
-        })
-      : null
-    const hostId = bridgeWall?.id ?? placement.hostWall!.id
-    const opening = (kind === 'door' ? DoorNode : WindowNode).parse({
-      parentId: hostId,
-      wallId: hostId,
-      position: [placement.along, kind === 'door' ? 1.05 : 1.65, 0],
-      width: placement.width,
-      name,
-      metadata,
-    })
-    return [...(bridgeWall ? [bridgeWall] : []), opening]
-  }
   if (kind === 'balcony') {
     const footprint = stroke
       ? balconyFromEdge(centreline, balcony.depth, balcony.reverse)
@@ -355,10 +400,13 @@ function balconyShapeChains<T extends { id: string; points: PlanPoint[]; stroke?
 export function outlineBatchPrimitiveNodes({
   shapes,
   existingWalls = [],
+  openingGrouping = 'touching',
   ...options
 }: Omit<Parameters<typeof outlinePrimitiveNodes>[0], 'points' | 'outlineId'> & {
   shapes: { id: string; points: PlanPoint[]; holes?: PlanPoint[][]; stroke?: boolean }[]
   existingWalls?: readonly WallNode[]
+  /** Door/window only: one opening per shape, or per cluster of touching shapes. */
+  openingGrouping?: SymbolGrouping
 }): AnyNode[] {
   if (!shapes.length || shapes.length > 512) throw Error('Select between 1 and 512 shapes.')
   if (new Set(shapes.map((s) => s.id)).size !== shapes.length)
@@ -369,16 +417,29 @@ export function outlineBatchPrimitiveNodes({
     throw Error('Set a positive reference scale.')
   const plannedShapes =
     options.kind === 'balcony' ? balconyShapeChains(shapes, 0.001 / metersPerPixel) : shapes
-  // Opening symbols arrive as several SVG shapes (frame + glass, leaf + arc);
-  // they always compose ONE opening, sized by the group's overall footprint.
-  if (options.kind === 'door' || options.kind === 'window')
-    return outlinePrimitiveNodes({
-      ...options,
-      points: plannedShapes.flatMap((s) => s.points),
-      holes: [],
-      outlineId: plannedShapes.map((s) => s.id).join('+'),
-      name: options.name,
+  // Opening symbols arrive as several SVG shapes (frame + glass, leaf + arc):
+  // each group of them is one opening, sized by the group's overall footprint.
+  if (options.kind === 'door' || options.kind === 'window') {
+    const groups = groupSymbolShapes(
+      plannedShapes,
+      openingGrouping,
+      SYMBOL_PART_GAP / metersPerPixel,
+    )
+    const walls = [...existingWalls]
+    return groups.flatMap((group, i) => {
+      const nodes = outlinePrimitiveNodes({
+        ...options,
+        existingWalls: walls,
+        points: group.flatMap((s) => s.points),
+        holes: [],
+        outlineId: group.map((s) => s.id).join('+'),
+        name: groups.length === 1 ? options.name : `${options.name} ${i + 1}`,
+      })
+      // A later opening in the same gap hosts on this bridge instead of bridging again.
+      walls.push(...nodes.filter((n): n is WallNode => n.type === 'wall'))
+      return nodes
     })
+  }
   const nodes = plannedShapes.flatMap((shape, i) =>
     outlinePrimitiveNodes({
       ...options,
