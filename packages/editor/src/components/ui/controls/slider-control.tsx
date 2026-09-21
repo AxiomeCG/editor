@@ -19,6 +19,11 @@ interface SliderControlProps {
   unit?: string
   restoreOnCommit?: boolean
   mixed?: boolean
+  /** Generators that coalesce their own history must not pause global history. */
+  manageHistory?: boolean
+  /** Apply valid text while typing, as well as drag/wheel changes. */
+  liveText?: boolean
+  disabled?: boolean
 }
 
 function stepPrecision(s: number): number {
@@ -62,6 +67,9 @@ export function SliderControl({
   unit = '',
   restoreOnCommit = true,
   mixed = false,
+  manageHistory = true,
+  liveText = false,
+  disabled = false,
 }: SliderControlProps) {
   // Values and bounds stay in meters; gestures and input use the displayed unit.
   const { isImperial, displayUnit, parseUnit, precision, step, toDisplay, toStored } =
@@ -88,6 +96,7 @@ export function SliderControl({
     stepMultiplier: number
   } | null>(null)
   const labelRef = useRef<HTMLDivElement>(null)
+  const editOrigin = useRef(value)
   const shown = dragDisplay ?? value
   const valueRef = useRef(shown)
   valueRef.current = shown
@@ -118,7 +127,7 @@ export function SliderControl({
     const el = labelRef.current
     if (!el) return
     const handleWheel = (e: WheelEvent) => {
-      if (isEditing) return
+      if (isEditing || disabled) return
       e.preventDefault()
       const direction = e.deltaY < 0 ? 1 : -1
       const s = getAdjustedStep(step, e)
@@ -128,12 +137,14 @@ export function SliderControl({
     }
     el.addEventListener('wheel', handleWheel, { passive: false })
     return () => el.removeEventListener('wheel', handleWheel)
-  }, [isEditing, step, applyDisplayDelta, onChange, onCommit])
+  }, [isEditing, disabled, step, applyDisplayDelta, onChange, onCommit])
 
   // Arrow key support while hovered
   useEffect(() => {
-    if (!isHovered || isEditing) return
+    if (!isHovered || isEditing || disabled) return
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.closest('input,textarea,select,button,[contenteditable=true]'))
+        return
       let direction = 0
       if (e.key === 'ArrowUp' || e.key === 'ArrowRight') direction = 1
       else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') direction = -1
@@ -147,11 +158,11 @@ export function SliderControl({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isHovered, isEditing, step, applyDisplayDelta, onChange, onCommit])
+  }, [isHovered, isEditing, disabled, step, applyDisplayDelta, onChange, onCommit])
 
   const handleLabelPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (isEditing) return
+      if (isEditing || disabled) return
       e.preventDefault()
       e.currentTarget.setPointerCapture(e.pointerId)
       dragRef.current = {
@@ -161,9 +172,9 @@ export function SliderControl({
         stepMultiplier: getStepMultiplier(e),
       }
       setIsDragging(true)
-      useScene.temporal.getState().pause()
+      if (manageHistory) useScene.temporal.getState().pause()
     },
-    [isEditing],
+    [isEditing, disabled, manageHistory],
   )
 
   const handleLabelPointerMove = useCallback(
@@ -203,36 +214,59 @@ export function SliderControl({
       setIsDragging(false)
       e.currentTarget.releasePointerCapture(e.pointerId)
 
-      if (originValue !== finalVal && restoreOnCommit) {
+      if (originValue !== finalVal && restoreOnCommit && manageHistory) {
         onChange(originValue)
-        useScene.temporal.getState().resume()
+        if (manageHistory) useScene.temporal.getState().resume()
         onChange(finalVal)
         onCommit?.(finalVal)
       } else {
-        useScene.temporal.getState().resume()
+        if (manageHistory) useScene.temporal.getState().resume()
         onCommit?.(finalVal)
       }
       setDragDisplay(null)
     },
-    [onChange, onCommit, restoreOnCommit],
+    [onChange, onCommit, restoreOnCommit, manageHistory],
   )
 
   const handleValueClick = useCallback(() => {
+    if (disabled) return
+    editOrigin.current = value
     setIsEditing(true)
     setInputValue(toDisplay(value).toFixed(precision))
-  }, [value, precision, toDisplay])
+  }, [disabled, value, precision, toDisplay])
+
+  const handleTextChange = (text: string) => {
+    setInputValue(text)
+    if (!liveText || disabled || !text.trim()) return
+    const spec = lingoUnitSpec(unit)
+    const normalized = text.trim().replace(',', '.')
+    const bare = /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(normalized)
+    const stored = bare
+      ? toStored(Number(normalized))
+      : spec
+        ? parseMeasurement(normalized, spec, {
+            bareUnit: parseUnit ?? spec.unitId,
+            system: isImperial ? 'us' : 'metric',
+          })
+        : null
+    // Let incomplete/out-of-range text remain editable without changing the scene.
+    if (stored !== null && Number.isFinite(stored) && stored >= min && stored <= max) {
+      onChange(toStored(Number(toDisplay(stored).toFixed(precision))))
+    }
+  }
 
   const submitValue = useCallback(() => {
+    const text = liveText ? inputValue.trim().replace(',', '.') : inputValue
     const spec = lingoUnitSpec(unit)
     let stored = spec
-      ? parseMeasurement(inputValue, spec, {
+      ? parseMeasurement(text, spec, {
           bareUnit: parseUnit ?? spec.unitId,
           system: isImperial ? 'us' : 'metric',
         })
       : null
     if (stored === null) {
       // Fallback: a bare number typed in the DISPLAY unit → convert to stored.
-      const numValue = Number.parseFloat(inputValue)
+      const numValue = liveText ? Number(text || 'NaN') : Number.parseFloat(text)
       stored = Number.isFinite(numValue) ? toStored(numValue) : null
     }
     if (stored === null) {
@@ -255,6 +289,7 @@ export function SliderControl({
     value,
     toDisplay,
     toStored,
+    liveText,
   ])
 
   const spec = lingoUnitSpec(unit)
@@ -274,6 +309,10 @@ export function SliderControl({
       if (e.key === 'Enter') {
         submitValue()
       } else if (e.key === 'Escape') {
+        if (liveText) {
+          onChange(editOrigin.current)
+          onCommit?.(editOrigin.current)
+        }
         setInputValue(toDisplay(value).toFixed(precision))
         setIsEditing(false)
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -285,7 +324,17 @@ export function SliderControl({
         setInputValue(toDisplay(newV).toFixed(precision))
       }
     },
-    [submitValue, value, precision, step, applyDisplayDelta, onChange, toDisplay],
+    [
+      submitValue,
+      value,
+      precision,
+      step,
+      applyDisplayDelta,
+      onChange,
+      onCommit,
+      liveText,
+      toDisplay,
+    ],
   )
 
   const displayValue = toDisplay(shown)
@@ -295,6 +344,7 @@ export function SliderControl({
       className={cn(
         'group flex h-7 w-full select-none items-center rounded-lg px-2 transition-colors',
         isDragging ? 'bg-white/5' : 'hover:bg-white/5',
+        disabled && 'pointer-events-none opacity-40',
         className,
       )}
       onMouseEnter={() => setIsHovered(true)}
@@ -309,6 +359,7 @@ export function SliderControl({
         onPointerDown={handleLabelPointerDown}
         onPointerMove={handleLabelPointerMove}
         onPointerUp={handleLabelPointerUp}
+        onPointerCancel={handleLabelPointerUp}
         ref={labelRef}
       >
         {/* Grip dots — 2×3 grid */}
@@ -338,9 +389,11 @@ export function SliderControl({
             )}
             <input
               autoFocus
+              aria-label={typeof label === 'string' ? label : undefined}
+              disabled={disabled}
               className="w-14 bg-transparent p-0 text-right font-mono text-foreground outline-none selection:bg-primary/30"
               onBlur={submitValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => handleTextChange(e.target.value)}
               onKeyDown={handleInputKeyDown}
               type="text"
               value={inputValue}
@@ -357,14 +410,24 @@ export function SliderControl({
             )}
           </>
         ) : mixed && !isDragging ? (
-          <div
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={typeof label === 'string' ? `${label}: mixed` : undefined}
             className="flex cursor-text items-center text-muted-foreground transition-colors hover:text-foreground"
             onClick={handleValueClick}
           >
             <span className="font-mono tracking-tight">Mixed</span>
-          </div>
+          </button>
         ) : (
-          <div
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={
+              typeof label === 'string'
+                ? `${label}: ${displayValue.toFixed(precision)}${displayUnit}`
+                : undefined
+            }
             className="flex cursor-text items-center text-foreground/60 transition-colors hover:text-foreground"
             onClick={handleValueClick}
           >
@@ -372,7 +435,7 @@ export function SliderControl({
               {Number(displayValue.toFixed(precision)).toFixed(precision)}
             </span>
             {displayUnit && <span className="ml-[1px] text-muted-foreground">{displayUnit}</span>}
-          </div>
+          </button>
         )}
       </div>
     </div>

@@ -27,7 +27,12 @@ import { useIsMobile } from '../../../hooks/use-mobile'
 import { shouldShowEditingControls } from '../../../lib/interaction/overlay-policy'
 import { sfxEmitter } from '../../../lib/sfx-bus'
 import useEditor from '../../../store/use-editor'
-import { deleteSelection, duplicateSelectionAndPickUp, startGroupPickUp } from '../../editor/group-actions'
+import {
+  deleteSelection,
+  duplicateSelectionAndPickUp,
+  startGroupPickUp,
+} from '../../editor/group-actions'
+import { BalconySelectionControls } from '../balcony-selection-controls'
 import { resolveHomogeneousSelection } from './homogeneous-selection'
 import { MobilePanelSheet } from './mobile-panel-sheet'
 import { MobileSelectionBar } from './mobile-selection-bar'
@@ -262,12 +267,36 @@ export function PanelManager({
 
   // The inspector's expanded state is shared across panel swaps, but a fresh
   // selection after everything was deselected should open collapsed again.
-  const hasAnySelection = selectedIds.length > 0 || Boolean(selectedZoneId) || Boolean(selectedReferenceId)
+  const hasAnySelection =
+    selectedIds.length > 0 || Boolean(selectedZoneId) || Boolean(selectedReferenceId)
   useEffect(() => {
     if (!hasAnySelection) {
       resetDesktopInspectorCollapsed()
     }
   }, [hasAnySelection])
+
+  const hasBalconySelection = useScene((s) =>
+    selectedIds.some((id) => {
+      const n = s.nodes[id as AnyNodeId]
+      return (n?.type === 'slab' || n?.type === 'fence') && !!n.metadata.balcony
+    }),
+  )
+  const singleFooter = hasBalconySelection ? (
+    <>
+      <BalconySelectionControls />
+      {inspectorFooter}
+    </>
+  ) : (
+    inspectorFooter
+  )
+  const multiFooter = hasBalconySelection ? (
+    <>
+      <BalconySelectionControls />
+      {multiSelectionFooter}
+    </>
+  ) : (
+    multiSelectionFooter
+  )
 
   if (!shouldShowEditingControls(readOnly)) return null
 
@@ -281,9 +310,9 @@ export function PanelManager({
           breakdown={multiBreakdown}
           panel={
             homogeneousType ? (
-              <MultiParametricInspector footer={multiSelectionFooter} />
+              <MultiParametricInspector footer={multiFooter} />
             ) : (
-              <MultiSelectionPanel footer={multiSelectionFooter} />
+              <MultiSelectionPanel footer={multiFooter} />
             )
           }
           type={homogeneousType}
@@ -294,7 +323,7 @@ export function PanelManager({
       <MobilePanelLayer
         isReference={false}
         node={selectedNode}
-        panel={panelForType(selectedNodeType)}
+        panel={panelForType(selectedNodeType, singleFooter)}
       />
     )
   }
@@ -319,10 +348,10 @@ export function PanelManager({
   // otherwise the actions-only panel. Mobile uses the same panels in a sheet.
   if (selectedIds.length > 1) {
     if (homogeneousType) {
-      return <MultiParametricInspector footer={multiSelectionFooter} />
+      return <MultiParametricInspector footer={multiFooter} />
     }
-    return <MultiSelectionPanel footer={multiSelectionFooter} />
+    return <MultiSelectionPanel footer={multiFooter} />
   }
 
-  return panelForType(selectedNodeType, inspectorFooter)
+  return panelForType(selectedNodeType, singleFooter)
 }

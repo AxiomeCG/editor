@@ -184,7 +184,12 @@ function createFenceCurveBlockParts(
   maxSegmentLength = MIN_CURVE_SEGMENT_LENGTH,
 ): FencePart[] {
   const length = getFenceCenterlineLength(fence) * Math.max(1e-4, endT - startT)
-  const segmentCount = Math.max(1, Math.ceil(length / Math.max(1e-4, maxSegmentLength)))
+  // Straight panels need one solid span: internal end faces show through glass.
+  // Keep subdivision for arcs and spline paths, whose normals change along the run.
+  const straight = !fence.curveOffset && !(fence.path && fence.path.length >= 2)
+  const segmentCount = straight
+    ? 1
+    : Math.max(1, Math.ceil(length / Math.max(1e-4, maxSegmentLength)))
   const parts: FencePart[] = []
 
   for (let index = 0; index < segmentCount; index += 1) {

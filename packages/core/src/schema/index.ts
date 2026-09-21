@@ -111,6 +111,7 @@ export { CupolaMaterialRole, CupolaNode } from './nodes/cupola'
 export {
   DoorNode,
   DoorSegment,
+  FRENCH_DOOR_SEGMENTS,
   OpeningConstructionType,
   OpeningDimensionReference,
 } from './nodes/door'

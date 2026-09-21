@@ -233,6 +233,7 @@ export {
   ViewToggles as ToolbarLeft,
   ViewToggles as ViewerToolbarLeft,
 } from './components/ui/action-menu/view-toggles'
+export { BalconyTool } from './components/ui/balcony-tool'
 export { useCommandPalette } from './components/ui/command-palette'
 export { ActionButton, ActionGroup } from './components/ui/controls/action-button'
 export {

@@ -70,6 +70,11 @@
       "types": "./dist/procedural-items/index.d.ts",
       "import": "./dist/procedural-items/index.js",
       "default": "./dist/procedural-items/index.js"
+    },
+    "./building": {
+      "types": "./dist/building/index.d.ts",
+      "import": "./dist/building/index.js",
+      "default": "./dist/building/index.js"
     }
   },
   "files": [

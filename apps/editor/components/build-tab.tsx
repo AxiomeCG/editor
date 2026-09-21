@@ -7,6 +7,7 @@ import {
   useRegistryVersion,
 } from '@pascal-app/core'
 import {
+  BalconyTool,
   CATALOG_ITEMS,
   type FloorplanMode,
   getFloorplanNodeExtension,
@@ -72,6 +73,8 @@ const BASE_BUILD_TYPES: BuildType[] = [
   { id: 'wall', label: 'Wall', iconSrc: '/icons/wall.webp', kind: 'wall' },
   { id: 'fence', label: 'Fence', iconSrc: '/icons/fence.webp', kind: 'fence' },
   { id: 'slab', label: 'Slab', iconSrc: '/icons/floor.webp', kind: 'slab' },
+  // Panel tile: builds deck + railings from selected walls or zones (select mode).
+  { id: 'balcony', label: 'Balcony', iconSrc: '/icons/balcony.svg' },
   { id: 'ceiling', label: 'Ceiling', iconSrc: '/icons/ceiling.webp', kind: 'ceiling' },
   { id: 'roof', label: 'Roof', iconSrc: '/icons/roof.webp', kind: 'roof' },
   { id: 'stair', label: 'Stairs', iconSrc: '/icons/stairs.webp', kind: 'stair' },
@@ -263,6 +266,7 @@ const MEP_TOOL_KINDS = new Set<string>([
 
 export function BuildTab() {
   const [mepOpen, setMepOpen] = useState(false)
+  const [balconyOpen, setBalconyOpen] = useState(false)
   const activeTool = useEditor((s) => s.tool)
   const mode = useEditor((s) => s.mode)
   const roofDefaults = useEditor((s) => s.toolDefaults.roof)
@@ -302,12 +306,14 @@ export function BuildTab() {
     (mode === 'build' && !!activeTool && MEP_TOOL_KINDS.has(activeTool)) ||
     (mode === 'select' && mepOpen)
   const isKitchenActive = mode === 'build' && activeTool === 'cabinet'
+  const isBalconyActive = mode === 'select' && balconyOpen
   const parsedRoofType = RoofTypeSchema.safeParse(roofDefaults?.roofType)
   const activeRoofType = parsedRoofType.success ? parsedRoofType.data : 'gable'
 
   const isTypeActive = (type: BuildType) => {
     if (type.mode) return mode === type.mode
     if (type.id === 'mep') return isMepActive
+    if (type.id === 'balcony') return isBalconyActive
     if (type.id === 'kitchen') return isKitchenActive
     if (type.id === 'roof')
       return mode === 'build' && (activeTool === 'roof' || isRoofFeatureActive)
@@ -316,6 +322,7 @@ export function BuildTab() {
 
   const handleTypeClick = useCallback((type: BuildType) => {
     setMepOpen(type.id === 'mep')
+    setBalconyOpen(type.id === 'balcony')
     if (type.mode === 'material-paint') {
       activatePaintMode()
     } else if (type.mode === 'terrain-sculpt') {
@@ -326,6 +333,11 @@ export function BuildTab() {
       ed.setStructureLayer('elements')
       ed.setCatalogCategory(null)
       ed.setMode('build')
+      ed.setTool(null)
+    } else if (type.id === 'balcony') {
+      const ed = useEditor.getState()
+      ed.setPhase('structure')
+      ed.setMode('select')
       ed.setTool(null)
     } else if (type.id === 'kitchen') {
       activateModularCabinetTool()
@@ -393,7 +405,11 @@ export function BuildTab() {
         </div>
       </TooltipProvider>
 
-      {mode === 'material-paint' ? (
+      {isBalconyActive ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <BalconyTool />
+        </div>
+      ) : mode === 'material-paint' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <MaterialPaintPanel />
         </div>

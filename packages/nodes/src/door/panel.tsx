@@ -1,6 +1,13 @@
 'use client'
 
-import { type AnyNode, type AnyNodeId, DoorNode, useInteractive, useScene } from '@pascal-app/core'
+import {
+  type AnyNode,
+  type AnyNodeId,
+  DoorNode,
+  FRENCH_DOOR_SEGMENTS,
+  useInteractive,
+  useScene,
+} from '@pascal-app/core'
 import {
   ActionButton,
   ActionGroup,
@@ -43,24 +50,7 @@ const garageDoorTypeOptions = [
   available: boolean
 }[]
 
-const frenchDoorSegments: DoorNode['segments'] = [
-  {
-    type: 'glass',
-    heightRatio: 0.76,
-    columnRatios: [1, 1],
-    dividerThickness: 0.025,
-    panelDepth: 0.01,
-    panelInset: 0.04,
-  },
-  {
-    type: 'panel',
-    heightRatio: 0.24,
-    columnRatios: [1],
-    dividerThickness: 0.03,
-    panelDepth: 0.012,
-    panelInset: 0.035,
-  },
-]
+const frenchDoorSegments: DoorNode['segments'] = FRENCH_DOOR_SEGMENTS
 
 const foldingDoorSegments: DoorNode['segments'] = [
   {
