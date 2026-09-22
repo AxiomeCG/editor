@@ -68,6 +68,17 @@ export const FacadeBayBalconySchema = z.object({
 })
 export type FacadeBayBalcony = z.infer<typeof FacadeBayBalconySchema>
 
+/** Cladding panels a bay lays out around its opening: a finish and how they sit on the face. */
+export const FacadeCladdingSchema = z.object({
+  finish: z.enum(FACADE_FINISHES),
+  color: HexColor,
+  /** Panel depth. */
+  thickness: z.number().finite().min(0.005).max(0.5).default(0.03),
+  /** Gap between the wall face and the panel; positive stands it proud. */
+  standoff: z.number().finite().min(0).max(1).default(0),
+})
+export type FacadeCladding = z.infer<typeof FacadeCladdingSchema>
+
 export const FacadeBaySchema = z.object({
   /** Stable identity inside the unit; also seeds the keys of what it generates. */
   key: z.string().min(1),
@@ -84,6 +95,10 @@ export const FacadeBaySchema = z.object({
   remainder: z.enum(['center', 'widen-piers', 'align-to-anchor']).default('center'),
   opening: FacadeBayOpeningSchema.optional(),
   balcony: FacadeBayBalconySchema.optional(),
+  /** Beside the opening, floor to ceiling; the whole bay when it has no opening. */
+  infill: FacadeCladdingSchema.optional(),
+  /** Below and above the opening, across its width. */
+  spandrel: FacadeCladdingSchema.optional(),
 })
 export type FacadeBay = z.infer<typeof FacadeBaySchema>
 export type FacadeUnitHorizontalAnchor = FacadeBay['horizontal']
@@ -326,6 +341,63 @@ function balconyIn(
   const right = Math.min(runWidth, centre + width / 2)
   if (right - left < MIN_BALCONY_WIDTH) return undefined
   return { left, right, depth: balcony.depth, railing: balcony.railing }
+}
+
+export type FacadeCladdingPart =
+  | 'infill'
+  | 'infill-left'
+  | 'infill-right'
+  | 'spandrel-below'
+  | 'spandrel-above'
+export type FacadeCladdingRect = FacadeUnitObstacle & {
+  part: FacadeCladdingPart
+  cladding: FacadeCladding
+}
+
+/** Thinner strips than this are slivers, not panels. */
+const MIN_CLADDING = 0.02
+
+/**
+ * The panels one bay placement lays out, in run coordinates: infill beside the
+ * opening floor to ceiling, and spandrels below and above it.
+ */
+export function bayCladdingRects(
+  bay: Pick<FacadeBay, 'infill' | 'spandrel'>,
+  placement: Pick<FacadeBayPlacement, 'left' | 'right' | 'opening'>,
+  runHeight: number,
+): FacadeCladdingRect[] {
+  const rects: FacadeCladdingRect[] = []
+  const add = (
+    part: FacadeCladdingPart,
+    cladding: FacadeCladding,
+    left: number,
+    right: number,
+    bottom: number,
+    top: number,
+  ) => {
+    if (right - left >= MIN_CLADDING && top - bottom >= MIN_CLADDING)
+      rects.push({ part, cladding, left, right, bottom, top })
+  }
+  const { opening } = placement
+  // An opening shifted past its bay still leaves the bay's own edges intact.
+  const openingLeft = opening
+    ? Math.min(Math.max(opening.left, placement.left), placement.right)
+    : 0
+  const openingRight = opening
+    ? Math.min(Math.max(opening.right, placement.left), placement.right)
+    : 0
+  if (bay.infill) {
+    if (!opening) add('infill', bay.infill, placement.left, placement.right, 0, runHeight)
+    else {
+      add('infill-left', bay.infill, placement.left, openingLeft, 0, runHeight)
+      add('infill-right', bay.infill, openingRight, placement.right, 0, runHeight)
+    }
+  }
+  if (bay.spandrel && opening) {
+    add('spandrel-below', bay.spandrel, openingLeft, openingRight, 0, opening.bottom)
+    add('spandrel-above', bay.spandrel, openingLeft, openingRight, opening.top, runHeight)
+  }
+  return rects
 }
 
 function overlaps(

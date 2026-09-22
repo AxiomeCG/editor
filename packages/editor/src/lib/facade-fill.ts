@@ -15,6 +15,7 @@ import {
   FACADE_OWNERSHIP_KEYS,
   type FacadeMaterialRefs,
   type FacadeWallTarget,
+  facadeCladdingKey,
   facadeFinishMaterial,
   planFacadeFill,
 } from '@pascal-app/core/building'
@@ -45,11 +46,21 @@ function sceneMaterialRef(material: MaterialSchema, name: string) {
 }
 
 function facadeMaterialRefs(unit: FacadeUnit): FacadeMaterialRefs {
-  if (!unit.appearance) return {}
+  const cladding: Record<string, string> = {}
+  for (const bay of unit.bays)
+    for (const panel of [bay.infill, bay.spandrel]) {
+      if (!panel || cladding[facadeCladdingKey(panel)]) continue
+      cladding[facadeCladdingKey(panel)] = sceneMaterialRef(
+        facadeFinishMaterial(panel.finish, panel.color),
+        `Facade · ${panel.finish} panel`,
+      )
+    }
+  if (!unit.appearance) return { cladding }
   const { finish, wall, trim } = unit.appearance
   return {
     finish: sceneMaterialRef(facadeFinishMaterial(finish, wall), `Facade · ${finish}`),
     frame: sceneMaterialRef(facadeFinishMaterial('metal', trim), 'Facade · window frame'),
+    cladding,
   }
 }
 
@@ -86,6 +97,7 @@ export function applyFacade(
     for (const wallPlan of plan.walls) {
       applyNodeRepetition(wallPlan.openings, useScene.getState)
       applyNodeRepetition(wallPlan.balconies, useScene.getState)
+      applyNodeRepetition(wallPlan.panels, useScene.getState)
       if (wallPlan.wallUpdate) useScene.getState().updateNode(wallPlan.wall.id, wallPlan.wallUpdate)
     }
     return { walls: plan.walls.length, skipped: plan.skipped }

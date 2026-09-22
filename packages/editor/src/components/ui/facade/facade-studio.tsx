@@ -15,17 +15,8 @@ import { SliderControl } from '../controls/slider-control'
 import { ToggleControl } from '../controls/toggle-control'
 import { Button } from '../primitives/button'
 import { FacadeElevation } from './facade-elevation'
-import { FacadeBayControls, newOpening } from './facade-bay-controls'
+import { FacadeBayControls, FINISH_LABELS, newOpening } from './facade-bay-controls'
 
-const FINISH_LABELS: Record<FacadeFinish, string> = {
-  brick: 'Brick',
-  stone: 'Stone',
-  plaster: 'Plaster',
-  siding: 'Siding',
-  timber: 'Timber',
-  glass: 'Glass',
-  metal: 'Metal',
-}
 const DEFAULT_APPEARANCE = { finish: 'plaster', wall: '#cfc5b7', trim: '#2f3133' } as const
 
 function describe(bay: FacadeBay) {

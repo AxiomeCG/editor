@@ -3,13 +3,14 @@ import {
   type AnyNode,
   type FenceNode,
   LevelNode,
+  type PanelNode,
   type SlabNode,
   WallNode,
   WindowNode,
 } from '../schema'
 import { readWallFacade, type WallFacade } from '../systems/facade/facade-config'
 import { DEFAULT_FACADE_UNIT, FacadeUnitSchema } from '../systems/facade/facade-unit'
-import { type FacadeFillPlan, facadeLayoutFrame, planFacadeFill } from './facade'
+import { type FacadeFillPlan, facadeCladdingKey, facadeLayoutFrame, planFacadeFill } from './facade'
 import { facadeScopeTargets } from './facade-scope'
 
 const level = LevelNode.parse({ level: 0, height: 3 })
@@ -266,5 +267,116 @@ describe('facades across walls', () => {
       [partition.id]: { ...partition, start: [5, 0], end: [5, 6] } as WallNode,
     }
     expect(facadeLayoutFrame(bottom, nodes, stored)).not.toBe(stored.layoutFrame!)
+  })
+})
+
+describe('bay cladding', () => {
+  const victorBay = FacadeUnitSchema.parse({
+    name: 'Mid-section',
+    bays: [
+      {
+        key: 'bay',
+        width: 2.4,
+        pier: 0.6,
+        endPier: 0.3,
+        widthMode: 'repeat',
+        opening: { width: 1.4, height: 1.6, sill: 0.9 },
+        infill: { finish: 'siding', color: '#2b2d2f' },
+        spandrel: { finish: 'brick', color: '#5a4136', thickness: 0.05 },
+      },
+    ],
+  })
+  const panelsOf = (plan: FacadeFillPlan) =>
+    plan.walls.flatMap((wallPlan) => wallPlan.panels.values)
+
+  test('each bay gets infill beside its opening and spandrels below and above it', () => {
+    const wall = straightWall(10)
+    const plan = planFacadeFill({ walls: [wall], nodes: scene(wall), unit: victorBay })
+    const panels = panelsOf(plan)
+    const first = panels.filter((p) => String(p.metadata.facadeCell).includes(':bay:0:'))
+    const byPart = Object.fromEntries(
+      first.map((p) => [String(p.metadata.facadeCell).split(':').at(-1), p]),
+    ) as Record<string, PanelNode>
+
+    // Three bays of 2.4 m, each a 1.4 m window with 0.5 m of infill either side.
+    expect(windowsOf(plan)).toHaveLength(3)
+    expect(panels).toHaveLength(12)
+    expect(byPart['infill-left']!.width).toBeCloseTo(0.5, 9)
+    expect(byPart['infill-left']!.height).toBeCloseTo(3, 9)
+    expect(byPart['spandrel-below']!.width).toBeCloseTo(1.4, 9)
+    expect(byPart['spandrel-below']!.height).toBeCloseTo(0.9, 9)
+    expect(byPart['spandrel-above']!.height).toBeCloseTo(3 - 2.5, 9)
+    expect(byPart['spandrel-below']!.thickness).toBeCloseTo(0.05, 9)
+    for (const panel of panels) {
+      expect(panel.parentId).toBe(wall.id)
+      expect(panel.metadata.facadeOwner).toBe(wall.id)
+      // The wall's exterior is its back, so the panels go there.
+      expect(panel.side).toBe('back')
+    }
+  })
+
+  test('each cladding gets its own material, shared by every panel that looks the same', () => {
+    const wall = straightWall(10)
+    const plan = planFacadeFill({
+      walls: [wall],
+      nodes: scene(wall),
+      unit: victorBay,
+      refs: {
+        cladding: {
+          [facadeCladdingKey({ finish: 'siding', color: '#2b2d2f' })]: 'scene:siding',
+          [facadeCladdingKey({ finish: 'brick', color: '#5a4136' })]: 'scene:brick',
+        },
+      },
+    })
+    const refs = new Set(
+      panelsOf(plan).map(
+        (p) => `${String(p.metadata.facadeCell).split(':').at(-1)}=${p.slots?.surface}`,
+      ),
+    )
+    expect(refs).toEqual(
+      new Set([
+        'infill-left=scene:siding',
+        'infill-right=scene:siding',
+        'spandrel-below=scene:brick',
+        'spandrel-above=scene:brick',
+      ]),
+    )
+  })
+
+  test('a bay without an opening is infill from end to end', () => {
+    const wall = straightWall(6)
+    const unit = FacadeUnitSchema.parse({
+      name: 'Blank',
+      bays: [
+        {
+          key: 'blank',
+          width: 1,
+          widthMode: 'stretch',
+          infill: { finish: 'timber', color: '#8a6a4a' },
+        },
+      ],
+    })
+    const panels = panelsOf(planFacadeFill({ walls: [wall], nodes: scene(wall), unit }))
+    expect(panels).toHaveLength(1)
+    expect(panels[0]!.width).toBeCloseTo(6, 9)
+  })
+
+  test('cladding across a wall seam becomes one panel per wall', () => {
+    const left = straightWall(4)
+    const right = straightWall(4, { start: [4, 0], end: [8, 0] })
+    const unit = FacadeUnitSchema.parse({
+      name: 'Band',
+      bays: [
+        {
+          key: 'band',
+          width: 1,
+          widthMode: 'stretch',
+          infill: { finish: 'stone', color: '#c2b69f' },
+        },
+      ],
+    })
+    const plan = planFacadeFill({ walls: [left, right], nodes: scene(left, right), unit })
+    const widths = plan.walls.map((wallPlan) => wallPlan.panels.values.map((p) => p.width))
+    expect(widths).toEqual([[expect.closeTo(4, 9)], [expect.closeTo(4, 9)]])
   })
 })

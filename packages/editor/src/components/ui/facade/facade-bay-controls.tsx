@@ -1,10 +1,13 @@
 'use client'
-import type {
-  FacadeBay,
-  FacadeBayBalcony,
-  FacadeBayOpening,
-  FacadeUnitHorizontalAnchor,
-  FacadeUnitVerticalAnchor,
+import {
+  FACADE_FINISHES,
+  type FacadeBay,
+  type FacadeBayBalcony,
+  type FacadeBayOpening,
+  type FacadeCladding,
+  type FacadeFinish,
+  type FacadeUnitHorizontalAnchor,
+  type FacadeUnitVerticalAnchor,
 } from '@pascal-app/core'
 import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -108,6 +111,67 @@ export const newOpening = (bay: FacadeBay): FacadeBayOpening => ({
   offsetY: 0,
 })
 const newBalcony = (): FacadeBayBalcony => ({ depth: 1.4, railing: 'slat', offsetX: 0 })
+
+export const FINISH_LABELS: Record<FacadeFinish, string> = {
+  brick: 'Brick',
+  stone: 'Stone',
+  plaster: 'Plaster',
+  siding: 'Siding',
+  timber: 'Timber',
+  glass: 'Glass',
+  metal: 'Metal',
+}
+
+/** Finish, colour and how the panels sit on the face. */
+function CladdingControls({
+  value,
+  onChange,
+}: {
+  value: FacadeCladding
+  onChange: (value: FacadeCladding) => void
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="w-16 shrink-0 text-xs text-muted-foreground">Material</span>
+        <select
+          aria-label="Panel material"
+          value={value.finish}
+          onChange={(event) => onChange({ ...value, finish: event.target.value as FacadeFinish })}
+          className="h-8 min-w-0 flex-1 rounded-md border border-border/50 bg-background px-2 text-xs text-foreground"
+        >
+          {FACADE_FINISHES.map((finish) => (
+            <option key={finish} value={finish}>
+              {FINISH_LABELS[finish]}
+            </option>
+          ))}
+        </select>
+        <input
+          type="color"
+          aria-label="Panel colour"
+          value={value.color}
+          onChange={(event) => onChange({ ...value, color: event.target.value })}
+          className="h-8 w-10 cursor-pointer rounded-md border border-border/50 bg-transparent"
+        />
+      </div>
+      <MetreSlider
+        label="Depth"
+        value={value.thickness}
+        min={0.005}
+        max={0.5}
+        step={0.005}
+        onChange={(thickness) => onChange({ ...value, thickness })}
+      />
+      <MetreSlider
+        label="Stand-off"
+        value={value.standoff}
+        max={1}
+        step={0.005}
+        onChange={(standoff) => onChange({ ...value, standoff })}
+      />
+    </>
+  )
+}
 
 /** Constraints of one bay: how it sits between the corners, and what it holds. */
 export function FacadeBayControls({
@@ -297,6 +361,42 @@ export function FacadeBayControls({
           </>
         )}
       </PanelSection>
+
+      <PanelSection title="Infill">
+        <ToggleControl
+          label={opening ? 'Panels beside the opening' : 'Clad the whole bay'}
+          checked={!!bay.infill}
+          onChange={(on) =>
+            set({
+              infill: on
+                ? { finish: 'siding', color: '#2b2d2f', thickness: 0.03, standoff: 0 }
+                : undefined,
+            })
+          }
+        />
+        {bay.infill && (
+          <CladdingControls value={bay.infill} onChange={(infill) => set({ infill })} />
+        )}
+      </PanelSection>
+
+      {opening && (
+        <PanelSection title="Spandrel">
+          <ToggleControl
+            label="Panels below and above the opening"
+            checked={!!bay.spandrel}
+            onChange={(on) =>
+              set({
+                spandrel: on
+                  ? { finish: 'brick', color: '#5a4136', thickness: 0.03, standoff: 0 }
+                  : undefined,
+              })
+            }
+          />
+          {bay.spandrel && (
+            <CladdingControls value={bay.spandrel} onChange={(spandrel) => set({ spandrel })} />
+          )}
+        </PanelSection>
+      )}
 
       <PanelSection title="Balcony">
         <ToggleControl

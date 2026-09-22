@@ -4,6 +4,7 @@ import {
   DoorNode,
   type FenceNode,
   MaterialSchema,
+  PanelNode,
   type SlabNode,
   type WallNode,
   WindowNode,
@@ -15,6 +16,8 @@ import {
   type WallFacade,
 } from '../systems/facade/facade-config'
 import {
+  bayCladdingRects,
+  type FacadeCladding,
   type FacadeFinish,
   type FacadeOpeningPlacement,
   type FacadeUnit,
@@ -40,11 +43,20 @@ export const MAX_FACADE_OPENINGS = 400
 const HOST_TOLERANCE = 1e-6
 
 export type FacadeOpeningNode = WindowNode | DoorNode
-export type FacadeMaterialRefs = { finish?: string; frame?: string }
+export type FacadeMaterialRefs = {
+  finish?: string
+  frame?: string
+  /** Scene material per cladding, keyed by `facadeCladdingKey`. */
+  cladding?: Record<string, string>
+}
+/** Claddings that look the same share one material. */
+export const facadeCladdingKey = (cladding: Pick<FacadeCladding, 'finish' | 'color'>) =>
+  `${cladding.finish}|${cladding.color}`
 export type FacadeWallPlan = {
   wall: WallNode
   openings: RepetitionPlan<FacadeOpeningNode>
   balconies: RepetitionPlan<SlabNode | FenceNode>
+  panels: RepetitionPlan<PanelNode>
   /** Null when the wall already carries this exact facade. */
   wallUpdate: Pick<WallNode, 'slots' | 'metadata'> | null
 }
@@ -189,6 +201,39 @@ function buildOpening(
     : WindowNode.parse({ name: 'Facade window', ...common })
 }
 
+type DesiredPanel = {
+  cell: string
+  x: number
+  width: number
+  bottom: number
+  top: number
+  cladding: FacadeCladding
+  infill: boolean
+}
+
+function buildPanel(
+  wall: WallNode,
+  side: 'front' | 'back',
+  desired: DesiredPanel,
+  old: PanelNode | undefined,
+  ref: string | undefined,
+): PanelNode {
+  return PanelNode.parse({
+    name: desired.infill ? 'Facade infill' : 'Facade spandrel',
+    ...old,
+    parentId: wall.id,
+    wallId: wall.id,
+    side,
+    position: [desired.x, (desired.bottom + desired.top) / 2, 0],
+    width: desired.width,
+    height: desired.top - desired.bottom,
+    thickness: desired.cladding.thickness,
+    offset: desired.cladding.standoff,
+    slots: { ...old?.slots, ...(ref ? { surface: ref } : {}) },
+    metadata: { ...old?.metadata, facadeOwner: wall.id, facadeCell: desired.cell },
+  })
+}
+
 /** Where a point on the run axis falls in a wall's own coordinate along its length. */
 const wallLocal = (w: FacadeRun['walls'][number], along: number) =>
   w.reversed ? w.to - along : along - w.from
@@ -258,6 +303,8 @@ export function planFacadeFill({
 
   const desiredOpenings = new Map<string, DesiredOpening[]>()
   const desiredBalconies = new Map<string, (SlabNode | FenceNode)[]>()
+  const desiredPanels = new Map<string, DesiredPanel[]>()
+  const bayByKey = new Map(unit.bays.map((bay) => [bay.key, bay]))
   const push = <T>(map: Map<string, T[]>, key: string, values: T[]) =>
     map.set(key, [...(map.get(key) ?? []), ...values])
   let skipped = 0
@@ -326,6 +373,26 @@ export function planFacadeFill({
           }),
         )
       }
+      const bay = bayByKey.get(placement.bay)
+      // Cladding is surface, so a strip crossing a wall seam becomes one panel per wall.
+      for (const rect of bay ? bayCladdingRects(bay, placement, run.height) : []) {
+        for (const w of run.walls) {
+          const left = Math.max(run.start + rect.left, w.from)
+          const right = Math.min(run.start + rect.right, w.to)
+          if (right - left < 0.02) continue
+          push(desiredPanels, w.wall.id, [
+            {
+              cell: `panel:${run.key}:${placement.key}:${rect.part}`,
+              x: wallLocal(w, (left + right) / 2),
+              width: right - left,
+              bottom: rect.bottom,
+              top: rect.top,
+              cladding: rect.cladding,
+              infill: rect.part.startsWith('infill'),
+            },
+          ])
+        }
+      }
     }
   }
 
@@ -340,6 +407,16 @@ export function planFacadeFill({
       previous: indexRepetitions(owned, (node) => String(node.metadata.facadeCell)),
       keyOf: (desired) => desired.cell,
       build: (desired, old) => buildOpening(wall, desired, old, refs.frame),
+    })
+    const ownedPanels = children(wall).filter(
+      (node): node is PanelNode => node.type === 'panel' && node.metadata.facadeOwner === wall.id,
+    )
+    const panels = reconcileRepetitions({
+      desired: desiredPanels.get(wall.id) ?? [],
+      previous: indexRepetitions(ownedPanels, (node) => String(node.metadata.facadeCell)),
+      keyOf: (desired) => desired.cell,
+      build: (desired, old) =>
+        buildPanel(wall, face, desired, old, refs.cladding?.[facadeCladdingKey(desired.cladding)]),
     })
     const balconies = reconcileRepetitions({
       desired: desiredBalconies.get(wall.id) ?? [],
@@ -374,6 +451,7 @@ export function planFacadeFill({
       wall,
       openings,
       balconies,
+      panels,
       wallUpdate: unchanged
         ? null
         : { slots, metadata: { ...wall.metadata, proceduralFacade: config } },

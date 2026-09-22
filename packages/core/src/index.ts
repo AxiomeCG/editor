@@ -406,6 +406,7 @@ export {
   WallFacadeSchema,
 } from './systems/facade/facade-config'
 export {
+  bayCladdingRects,
   DEFAULT_FACADE_UNIT,
   FACADE_FINISHES,
   FACADE_UNIT_CLEARANCE,
@@ -421,6 +422,10 @@ export {
   FacadeBayOpeningSchema,
   type FacadeBayPlacement,
   FacadeBaySchema,
+  type FacadeCladding,
+  type FacadeCladdingPart,
+  type FacadeCladdingRect,
+  FacadeCladdingSchema,
   type FacadeFinish,
   type FacadeOpeningPlacement,
   type FacadeUnit,

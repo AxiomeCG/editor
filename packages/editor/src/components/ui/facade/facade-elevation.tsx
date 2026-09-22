@@ -1,5 +1,7 @@
 'use client'
 import {
+  bayCladdingRects,
+  type FacadeBay,
   type FacadeBayPlacement,
   type FacadeUnit,
   type FacadeUnitResolution,
@@ -128,6 +130,8 @@ export function FacadeElevation({
           <Placement
             key={placement.key}
             placement={placement}
+            bay={unit.bays.find((b) => b.key === placement.bay)}
+            runHeight={height}
             y={y}
             trim={trimColor}
             selected={placement.bay === selectedBay}
@@ -194,11 +198,15 @@ export function FacadeElevation({
 
 function Placement({
   placement,
+  bay,
+  runHeight,
   y,
   trim,
   selected,
 }: {
   placement: FacadeBayPlacement
+  bay: FacadeBay | undefined
+  runHeight: number
   y: (up: number) => number
   trim: string
   selected: boolean
@@ -206,6 +214,20 @@ function Placement({
   const { opening, balcony } = placement
   return (
     <g opacity={selected ? 1 : 0.9}>
+      {bay &&
+        bayCladdingRects(bay, placement, runHeight).map((rect) => (
+          <rect
+            key={rect.part}
+            x={rect.left}
+            y={y(rect.top)}
+            width={rect.right - rect.left}
+            height={rect.top - rect.bottom}
+            fill={rect.cladding.color}
+            className="stroke-black/30"
+            strokeWidth={0.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
       {opening && (
         <>
           <rect
