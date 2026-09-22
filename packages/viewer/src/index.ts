@@ -286,6 +286,8 @@ export {
 } from './systems/wall/opening-cutout-geometry'
 export { getWallHideState, WallCutout } from './systems/wall/wall-cutout'
 export { getVisibleWallMaterials } from './systems/wall/wall-materials'
+/** Wall-hosted kinds whose geometry reads the wall rebuild with it. */
+export { subscribeWallRebuilds } from './systems/wall/wall-rebuild-notifications'
 // Wall internals re-exported so `@pascal-app/nodes`' registry-driven wall
 // definition can compose them into `def.system` without duplicating the
 // 800+ lines of CSG / mitering logic during Phase 3. These exports are

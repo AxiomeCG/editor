@@ -25,6 +25,7 @@ export type {
   LevelEvent,
   MeasurementEvent,
   NodeEvent,
+  PanelEvent,
   RidgeVentEvent,
   RoofEvent,
   RoofSegmentEvent,

@@ -5,6 +5,7 @@ import { MaterialSchema } from '../material'
 import { DoorNode } from './door'
 import { ItemNode } from './item'
 import { LeanToExtensionNode } from './lean-to-extension'
+import { PanelNode } from './panel'
 import { WindowNode } from './window'
 
 export const WallTreatmentSide = z.enum(['interior', 'exterior', 'both'])
@@ -139,6 +140,7 @@ export const WallNode = BaseNode.extend({
         DoorNode.shape.id,
         WindowNode.shape.id,
         LeanToExtensionNode.shape.id,
+        PanelNode.shape.id,
       ]),
     )
     .default([]),

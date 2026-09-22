@@ -140,7 +140,7 @@ export const wallDefinition: NodeDefinition<typeof WallNode> = {
   },
 
   relations: {
-    hosts: ['door', 'window', 'item', 'lean-to-extension'],
+    hosts: ['door', 'window', 'item', 'lean-to-extension', 'panel'],
     affectsSpatial: ['slab', 'ceiling', 'zone'],
     linkedBy: 'endpoint-match',
     cascadeDelete: 'descendants',

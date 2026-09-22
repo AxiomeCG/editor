@@ -214,6 +214,7 @@ export {
   PerimeterMeasurement,
   VolumeMeasurement,
 } from './nodes/measurement'
+export { PanelNode, type PanelNodeId, PanelSide } from './nodes/panel'
 export { PipeFittingNode } from './nodes/pipe-fitting'
 export { PipeSegmentNode } from './nodes/pipe-segment'
 export { PipeTrapNode } from './nodes/pipe-trap'

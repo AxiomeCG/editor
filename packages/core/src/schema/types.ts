@@ -28,6 +28,7 @@ import { LevelNode } from './nodes/level'
 import { LinesetNode } from './nodes/lineset'
 import { LiquidLineNode } from './nodes/liquid-line'
 import { MeasurementNode } from './nodes/measurement'
+import { PanelNode } from './nodes/panel'
 import { PipeFittingNode } from './nodes/pipe-fitting'
 import { PipeSegmentNode } from './nodes/pipe-segment'
 import { PipeTrapNode } from './nodes/pipe-trap'
@@ -91,6 +92,7 @@ export const AnyNode = nodeUnion([
   UnitNode,
   LevelNode,
   LeanToExtensionNode,
+  PanelNode,
   ColumnNode,
   ConstructionDimensionNode,
   BlockNode,
