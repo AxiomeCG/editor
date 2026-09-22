@@ -3,6 +3,7 @@ import {
   type AnyNode,
   DoorNode,
   type FenceNode,
+  FRENCH_DOOR_SEGMENTS,
   MaterialSchema,
   PanelNode,
   type SlabNode,
@@ -196,9 +197,32 @@ function buildOpening(
     slots: { ...old?.slots, ...(frameRef ? { frame: frameRef } : {}) },
     metadata: { ...old?.metadata, facadeOwner: wall.id, facadeCell: desired.cell },
   }
-  return opening.kind === 'door'
-    ? DoorNode.parse({ name: 'Facade door', ...common })
-    : WindowNode.parse({ name: 'Facade window', ...common })
+  const { style } = opening
+  if (opening.kind === 'window')
+    return WindowNode.parse({
+      name: 'Facade window',
+      ...common,
+      windowType: style.windowType,
+      columnRatios: Array.from({ length: style.columns }, () => 1),
+      rowRatios: Array.from({ length: style.rows }, () => 1),
+    })
+  // French doors are glazed; below this width two leaves would be too slim to pass.
+  const leaves =
+    style.doorType === 'double' || (style.doorType === 'french' && common.width >= 1.1) ? 2 : 1
+  return DoorNode.parse({
+    name: 'Facade door',
+    ...common,
+    doorType: style.doorType,
+    leafCount: leaves,
+    ...(style.doorType === 'french'
+      ? {
+          contentPadding: [0.045, 0.055],
+          segments: FRENCH_DOOR_SEGMENTS.map((segment) =>
+            leaves === 2 ? segment : { ...segment, columnRatios: [1] },
+          ),
+        }
+      : {}),
+  })
 }
 
 type DesiredPanel = {

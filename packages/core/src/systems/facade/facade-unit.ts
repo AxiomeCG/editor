@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { DoorType } from '../../schema/nodes/door'
+import { WindowType } from '../../schema/nodes/window'
 
 /**
  * A facade unit is the minimal facade: one run from a corner or T-junction to
@@ -55,14 +57,30 @@ export const FacadeBayOpeningSchema = z.object({
   offsetX: z.number().finite().default(0),
   /** Shift from the vertical anchor, or the head clearance when stretching. */
   offsetY: z.number().finite().default(0),
+  /** How a window opens. */
+  windowType: WindowType.default('casement'),
+  /** Pane grid of a window: equal columns (mullions) and rows (transoms). */
+  columns: z.number().int().min(1).max(6).default(1),
+  rows: z.number().int().min(1).max(4).default(1),
+  /** How a door opens. French: glazed leaves, two when the opening is wide enough. */
+  doorType: DoorType.default('french'),
 })
 export type FacadeBayOpening = z.infer<typeof FacadeBayOpeningSchema>
+export type FacadeOpeningStyle = Pick<
+  FacadeBayOpening,
+  'windowType' | 'columns' | 'rows' | 'doorType'
+>
 
 export const FacadeBayBalconySchema = z.object({
   /** Absent means the bay's full width. */
   width: z.number().finite().min(MIN_BALCONY_WIDTH).max(12).optional(),
   depth: z.number().finite().min(0.5).max(3).default(1.4),
   railing: z.enum(['slat', 'rail', 'glass']).default('slat'),
+  /**
+   * One balcony per bay, or one continuous balcony (a *balcon filant*) from the
+   * first repeat to the last.
+   */
+  span: z.enum(['bay', 'continuous']).default('bay'),
   /** Shift from the bay centre. */
   offsetX: z.number().finite().default(0),
 })
@@ -78,6 +96,20 @@ export const FacadeCladdingSchema = z.object({
   standoff: z.number().finite().min(0).max(1).default(0),
 })
 export type FacadeCladding = z.infer<typeof FacadeCladdingSchema>
+
+export const FacadeInfillSchema = FacadeCladdingSchema.extend({
+  /** Which sides of the opening are clad. */
+  sides: z.enum(['both', 'left', 'right']).default('both'),
+  /** Width of each side panel from the opening; absent fills to the bay's edge. */
+  width: z.number().finite().min(0.05).max(6).optional(),
+})
+export type FacadeInfill = z.infer<typeof FacadeInfillSchema>
+
+export const FacadeSpandrelSchema = FacadeCladdingSchema.extend({
+  /** Below the opening, above it, or both. */
+  parts: z.enum(['both', 'below', 'above']).default('both'),
+})
+export type FacadeSpandrel = z.infer<typeof FacadeSpandrelSchema>
 
 export const FacadeBaySchema = z.object({
   /** Stable identity inside the unit; also seeds the keys of what it generates. */
@@ -96,9 +128,9 @@ export const FacadeBaySchema = z.object({
   opening: FacadeBayOpeningSchema.optional(),
   balcony: FacadeBayBalconySchema.optional(),
   /** Beside the opening, floor to ceiling; the whole bay when it has no opening. */
-  infill: FacadeCladdingSchema.optional(),
+  infill: FacadeInfillSchema.optional(),
   /** Below and above the opening, across its width. */
-  spandrel: FacadeCladdingSchema.optional(),
+  spandrel: FacadeSpandrelSchema.optional(),
 })
 export type FacadeBay = z.infer<typeof FacadeBaySchema>
 export type FacadeUnitHorizontalAnchor = FacadeBay['horizontal']
@@ -141,6 +173,7 @@ export type FacadeUnitRun = { width: number; height: number }
 export type FacadeUnitObstacle = { left: number; right: number; bottom: number; top: number }
 export type FacadeOpeningPlacement = FacadeUnitObstacle & {
   kind: FacadeBayOpening['kind']
+  style: FacadeOpeningStyle
   x: number
   y: number
 }
@@ -199,44 +232,98 @@ export function resolveFacadeUnit(
   const balconies: { left: number; right: number }[] = []
   let skipped = 0
 
-  for (const bay of unit.bays) {
-    const opening = bay.opening
+  const balconyCollides = (balcony: { left: number; right: number }) =>
+    balconies.some((b) => balcony.left < b.right + clearance && balcony.right > b.left - clearance)
+  const tryPlace = (
+    bay: FacadeBay,
+    vertical: { bottom: number; height: number } | null,
+    span: Span,
+    bounds: { left: number; right: number },
+    index: number,
+    ownBalcony = true,
+  ): FacadeBayPlacement | null => {
+    const { opening } = bay
+    const placedOpening = opening && vertical ? openingIn(span, opening, vertical) : undefined
+    if (opening && !placedOpening) return null
+    const balcony = bay.balcony && ownBalcony ? balconyIn(span, bay.balcony, bounds) : undefined
+    if (
+      (placedOpening &&
+        (overlaps(placedOpening, obstacles, clearance) ||
+          overlaps(placedOpening, openings, clearance))) ||
+      (balcony && balconyCollides(balcony))
+    ) {
+      skipped++
+      return null
+    }
+    const placement: FacadeBayPlacement = {
+      key: `${bay.key}:${index}`,
+      bay: bay.key,
+      left: span.left,
+      right: span.left + span.width,
+      ...(placedOpening ? { opening: placedOpening } : {}),
+      ...(balcony ? { balcony } : {}),
+    }
+    placements.push(placement)
+    if (placedOpening) openings.push(placedOpening)
+    if (balcony) balconies.push(balcony)
+    return placement
+  }
+
+  const verticalOf = (bay: FacadeBay) => {
+    const { opening } = bay
     if (
       opening &&
       (opening.height < FACADE_UNIT_MIN_OPENING ||
         (opening.widthMode === 'fixed' && opening.width < FACADE_UNIT_MIN_OPENING))
     )
       throw Error('Openings must be at least 0.3 m wide and tall.')
-    const vertical = opening ? resolveVertical(opening, run.height) : null
-    // A bay whose opening cannot fit this storey contributes nothing.
-    if (opening && !vertical) continue
+    return opening ? resolveVertical(opening, run.height) : null
+  }
 
-    for (const [index, span] of resolveSpans(bay, run.width, maxRepeat).entries()) {
-      const placedOpening = opening && vertical ? openingIn(span, opening, vertical) : undefined
-      if (opening && !placedOpening) continue
-      const balcony = bay.balcony ? balconyIn(span, bay.balcony, run.width) : undefined
-      if (
-        (placedOpening &&
-          (overlaps(placedOpening, obstacles, clearance) ||
-            overlaps(placedOpening, openings, clearance))) ||
-        (balcony &&
-          balconies.some(
-            (b) => balcony.left < b.right + clearance && balcony.right > b.left - clearance,
-          ))
-      ) {
+  // Pinned bays claim their span first, like fixed elements in a design tool;
+  // repeating and stretching bays then fill the stretches left between them.
+  const whole = { left: 0, right: run.width }
+  const taken: { left: number; right: number }[] = []
+  for (const bay of unit.bays.filter((b) => b.widthMode === 'fixed')) {
+    const vertical = verticalOf(bay)
+    // A bay whose opening cannot fit this storey contributes nothing.
+    if (bay.opening && !vertical) continue
+    for (const [index, span] of resolveSpans(bay, run.width, maxRepeat).entries())
+      if (tryPlace(bay, vertical, span, whole, index))
+        taken.push({ left: span.left, right: span.left + span.width })
+  }
+  const free = freeStretches(run.width, taken)
+  for (const bay of unit.bays.filter((b) => b.widthMode !== 'fixed')) {
+    const vertical = verticalOf(bay)
+    if (bay.opening && !vertical) continue
+    let index = 0
+    const continuous = bay.balcony?.span === 'continuous'
+    for (const stretch of free) {
+      const here = resolveSpans(bay, stretch.right - stretch.left, maxRepeat).flatMap((span) => {
+        const placed = tryPlace(
+          bay,
+          vertical,
+          { left: span.left + stretch.left, width: span.width },
+          stretch,
+          index++,
+          !continuous,
+        )
+        return placed ? [placed] : []
+      })
+      // A continuous balcony runs from the stretch's first repeat to its last.
+      if (!continuous || !bay.balcony || !here.length) continue
+      const balcony = {
+        left: Math.max(stretch.left, here[0]!.left),
+        right: Math.min(stretch.right, here.at(-1)!.right),
+        depth: bay.balcony.depth,
+        railing: bay.balcony.railing,
+      }
+      if (balcony.right - balcony.left < MIN_BALCONY_WIDTH || balconyCollides(balcony)) {
         skipped++
         continue
       }
-      placements.push({
-        key: `${bay.key}:${index}`,
-        bay: bay.key,
-        left: span.left,
-        right: span.left + span.width,
-        ...(placedOpening ? { opening: placedOpening } : {}),
-        ...(balcony ? { balcony } : {}),
-      })
-      if (placedOpening) openings.push(placedOpening)
-      if (balcony) balconies.push(balcony)
+      here[0]!.balcony = balcony
+      balconies.push(balcony)
     }
   }
 
@@ -320,6 +407,12 @@ function openingIn(
   }
   return {
     kind: opening.kind,
+    style: {
+      windowType: opening.windowType,
+      columns: opening.columns,
+      rows: opening.rows,
+      doorType: opening.doorType,
+    },
     left,
     right: left + width,
     bottom: vertical.bottom,
@@ -329,16 +422,16 @@ function openingIn(
   }
 }
 
-/** Balconies stay inside the run: a deck reaching past a corner would pierce the next wall. */
+/** Balconies stay inside their stretch: past a corner a deck would pierce the next wall, past a pinned bay it would cover it. */
 function balconyIn(
   span: Span,
   balcony: FacadeBayBalcony,
-  runWidth: number,
+  bounds: { left: number; right: number },
 ): FacadeBalconyPlacement | undefined {
   const width = balcony.width ?? span.width
   const centre = span.left + span.width / 2 + balcony.offsetX
-  const left = Math.max(0, centre - width / 2)
-  const right = Math.min(runWidth, centre + width / 2)
+  const left = Math.max(bounds.left, centre - width / 2)
+  const right = Math.min(bounds.right, centre + width / 2)
   if (right - left < MIN_BALCONY_WIDTH) return undefined
   return { left, right, depth: balcony.depth, railing: balcony.railing }
 }
@@ -386,18 +479,53 @@ export function bayCladdingRects(
   const openingRight = opening
     ? Math.min(Math.max(opening.right, placement.left), placement.right)
     : 0
-  if (bay.infill) {
-    if (!opening) add('infill', bay.infill, placement.left, placement.right, 0, runHeight)
+  const { infill, spandrel } = bay
+  if (infill) {
+    if (!opening) add('infill', infill, placement.left, placement.right, 0, runHeight)
     else {
-      add('infill-left', bay.infill, placement.left, openingLeft, 0, runHeight)
-      add('infill-right', bay.infill, openingRight, placement.right, 0, runHeight)
+      const reach = infill.width ?? Number.POSITIVE_INFINITY
+      if (infill.sides !== 'right')
+        add(
+          'infill-left',
+          infill,
+          Math.max(placement.left, openingLeft - reach),
+          openingLeft,
+          0,
+          runHeight,
+        )
+      if (infill.sides !== 'left')
+        add(
+          'infill-right',
+          infill,
+          openingRight,
+          Math.min(placement.right, openingRight + reach),
+          0,
+          runHeight,
+        )
     }
   }
-  if (bay.spandrel && opening) {
-    add('spandrel-below', bay.spandrel, openingLeft, openingRight, 0, opening.bottom)
-    add('spandrel-above', bay.spandrel, openingLeft, openingRight, opening.top, runHeight)
+  if (spandrel && opening) {
+    if (spandrel.parts !== 'above')
+      add('spandrel-below', spandrel, openingLeft, openingRight, 0, opening.bottom)
+    if (spandrel.parts !== 'below')
+      add('spandrel-above', spandrel, openingLeft, openingRight, opening.top, runHeight)
   }
   return rects
+}
+
+/** The run minus the spans pinned bays took, in order. */
+function freeStretches(
+  runWidth: number,
+  taken: readonly { left: number; right: number }[],
+): { left: number; right: number }[] {
+  const stretches: { left: number; right: number }[] = []
+  let cursor = 0
+  for (const span of [...taken].sort((a, b) => a.left - b.left)) {
+    if (span.left > cursor) stretches.push({ left: cursor, right: Math.min(span.left, runWidth) })
+    cursor = Math.max(cursor, span.right)
+  }
+  if (runWidth > cursor) stretches.push({ left: cursor, right: runWidth })
+  return stretches.filter((stretch) => stretch.right - stretch.left > 1e-6)
 }
 
 function overlaps(

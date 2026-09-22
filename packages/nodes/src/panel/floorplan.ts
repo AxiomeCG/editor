@@ -1,5 +1,5 @@
 import type { FloorplanGeometry, GeometryContext, PanelNode, WallNode } from '@pascal-app/core'
-import { panelDepthOffset } from './geometry'
+import { panelDepthOffset } from '@pascal-app/core'
 
 /** A thin strip standing off the wall face, where the panel sits in plan. */
 export function buildPanelFloorplan(

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   type AnyNode,
+  type DoorNode,
   type FenceNode,
   LevelNode,
   type PanelNode,
@@ -378,5 +379,41 @@ describe('bay cladding', () => {
     const plan = planFacadeFill({ walls: [left, right], nodes: scene(left, right), unit })
     const widths = plan.walls.map((wallPlan) => wallPlan.panels.values.map((p) => p.width))
     expect(widths).toEqual([[expect.closeTo(4, 9)], [expect.closeTo(4, 9)]])
+  })
+})
+
+describe('opening styles', () => {
+  test('a window carries its operation and pane grid; a door bay makes French doors', () => {
+    const wall = straightWall(10)
+    const unit = FacadeUnitSchema.parse({
+      name: 'Styled',
+      bays: [
+        {
+          key: 'windows',
+          width: 1.6,
+          widthMode: 'fixed',
+          horizontal: 'left',
+          offsetX: 0.5,
+          opening: { width: 1.6, height: 1.8, sill: 0.8, windowType: 'casement', columns: 2 },
+        },
+        {
+          key: 'door',
+          width: 1.4,
+          widthMode: 'fixed',
+          horizontal: 'right',
+          offsetX: 0.5,
+          opening: { kind: 'door', width: 1.4, height: 2.2 },
+        },
+      ],
+    })
+    const plan = planFacadeFill({ walls: [wall], nodes: scene(wall), unit })
+    const [window] = windowsOf(plan).filter((n) => n.type === 'window') as WindowNode[]
+    const [door] = windowsOf(plan).filter((n) => n.type === 'door') as DoorNode[]
+
+    expect(window!.windowType).toBe('casement')
+    expect(window!.columnRatios).toEqual([1, 1])
+    expect(door!.doorType).toBe('french')
+    expect(door!.leafCount).toBe(2)
+    expect(door!.segments[0]!.type).toBe('glass')
   })
 })

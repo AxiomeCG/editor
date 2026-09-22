@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { PanelNode, WallNode } from '@pascal-app/core'
+import { PanelNode, panelDepthOffset, WallNode } from '@pascal-app/core'
 import type { Mesh } from 'three'
 import { panelDefinition } from './definition'
 import { buildPanelFloorplan } from './floorplan'
-import { buildPanelGeometry, panelDepthOffset } from './geometry'
+import { buildPanelGeometry } from './geometry'
 import { PANEL_SLOT_ID } from './slots'
 
 const wall = WallNode.parse({ start: [0, 0], end: [8, 0], thickness: 0.2 })

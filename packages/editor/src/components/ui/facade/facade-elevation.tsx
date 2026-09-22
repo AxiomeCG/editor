@@ -3,6 +3,7 @@ import {
   bayCladdingRects,
   type FacadeBay,
   type FacadeBayPlacement,
+  type FacadeOpeningPlacement,
   type FacadeUnit,
   type FacadeUnitResolution,
   resolveFacadeUnit,
@@ -241,22 +242,47 @@ function Placement({
             strokeWidth={2}
             vectorEffect="non-scaling-stroke"
           />
-          {opening.kind === 'door' && (
+          {divisions(opening).map(([x1, y1, x2, y2]) => (
             <line
-              x1={opening.x}
-              x2={opening.x}
-              y1={y(opening.top)}
-              y2={y(opening.bottom)}
+              key={`${x1}:${y1}:${x2}:${y2}`}
+              x1={x1}
+              x2={x2}
+              y1={y(y1)}
+              y2={y(y2)}
               stroke={trim}
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
             />
-          )}
+          ))}
         </>
       )}
       {balcony && <Balcony left={balcony.left} right={balcony.right} railing={balcony.railing} y={y} />}
     </g>
   )
+}
+
+/** Mullions and transoms of a window, or the meeting line of a two-leaf door, in run metres. */
+function divisions(opening: FacadeOpeningPlacement): [number, number, number, number][] {
+  const lines: [number, number, number, number][] = []
+  const width = opening.right - opening.left
+  const height = opening.top - opening.bottom
+  const { style } = opening
+  const columns =
+    opening.kind === 'door'
+      ? style.doorType === 'double' || (style.doorType === 'french' && width >= 1.1)
+        ? 2
+        : 1
+      : style.columns
+  const rows = opening.kind === 'door' ? 1 : style.rows
+  for (let c = 1; c < columns; c++) {
+    const x = opening.left + (width * c) / columns
+    lines.push([x, opening.bottom, x, opening.top])
+  }
+  for (let r = 1; r < rows; r++) {
+    const at = opening.bottom + (height * r) / rows
+    lines.push([opening.left, at, opening.right, at])
+  }
+  return lines
 }
 
 function Balcony({
@@ -275,8 +301,17 @@ function Balcony({
       ? Array.from({ length: Math.max(1, Math.floor((right - left) / 0.12)) }, (_, i) => left + 0.06 + i * 0.12)
       : []
   return (
-    <g className="stroke-neutral-200" strokeWidth={1} vectorEffect="non-scaling-stroke">
-      <rect x={left} y={y(0)} width={right - left} height={SLAB_THICKNESS} className="fill-neutral-400" />
+    // Strokes are set per shape: 1 user unit here is a metre, and vector-effect is not inherited.
+    <g className="stroke-neutral-200">
+      <rect
+        x={left}
+        y={y(0)}
+        width={right - left}
+        height={SLAB_THICKNESS}
+        className="fill-neutral-400"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
       {railing === 'glass' && (
         <rect
           x={left}
@@ -285,15 +320,17 @@ function Balcony({
           height={RAILING_HEIGHT}
           fill="#cfe6f2"
           fillOpacity={0.35}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
         />
       )}
       <line x1={left} x2={right} y1={y(RAILING_HEIGHT)} y2={y(RAILING_HEIGHT)} strokeWidth={2} vectorEffect="non-scaling-stroke" />
       {railing === 'rail' &&
         [0.35, 0.7].map((h) => (
-          <line key={h} x1={left} x2={right} y1={y(h)} y2={y(h)} vectorEffect="non-scaling-stroke" />
+          <line key={h} x1={left} x2={right} y1={y(h)} y2={y(h)} strokeWidth={1} vectorEffect="non-scaling-stroke" />
         ))}
       {bars.map((x) => (
-        <line key={x} x1={x} x2={x} y1={y(RAILING_HEIGHT)} y2={y(0)} vectorEffect="non-scaling-stroke" />
+        <line key={x} x1={x} x2={x} y1={y(RAILING_HEIGHT)} y2={y(0)} strokeWidth={1} vectorEffect="non-scaling-stroke" />
       ))}
       {[left, right].map((x) => (
         <line key={x} x1={x} x2={x} y1={y(RAILING_HEIGHT)} y2={y(0)} strokeWidth={2} vectorEffect="non-scaling-stroke" />

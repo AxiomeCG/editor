@@ -127,6 +127,7 @@ export {
   remapMeasurementAnchors,
   remapMeasurementReferences,
 } from './lib/measurement-geometry'
+export { panelDepthOffset } from './lib/panel-depth'
 export {
   type Point2D as PolygonPoint2D,
   pointInPolygon as pointInPolygon2D,
@@ -427,7 +428,12 @@ export {
   type FacadeCladdingRect,
   FacadeCladdingSchema,
   type FacadeFinish,
+  type FacadeInfill,
+  FacadeInfillSchema,
   type FacadeOpeningPlacement,
+  type FacadeOpeningStyle,
+  type FacadeSpandrel,
+  FacadeSpandrelSchema,
   type FacadeUnit,
   type FacadeUnitHeightMode,
   type FacadeUnitHorizontalAnchor,

@@ -64,15 +64,15 @@ export function FacadeTool() {
     })
 
   return (
-    <section className="flex min-w-0 flex-col pier-3 pb-3" aria-label="Facade tool">
+    <section className="flex min-w-0 flex-col gap-3 pb-3" aria-label="Facade tool">
       <h2 className="px-2 text-sm font-medium">Facade</h2>
       <p className="px-2 text-[11px] leading-4 text-muted-foreground">
         A unit is the facade between two corners. It repeats and stretches along every run of the
         walls you apply it to, restarting at each corner and wherever a wall meets the facade.
       </p>
 
-      <div className="mx-2 flex flex-col pier-2 rounded-lg border border-border/50 p-2">
-        <div className="flex items-baseline justify-between pier-2">
+      <div className="mx-2 flex flex-col gap-2 rounded-lg border border-border/50 p-2">
+        <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-sm">{unit.name}</span>
           <span className="shrink-0 text-[11px] text-muted-foreground">
             {unit.bays.length} {unit.bays.length === 1 ? 'bay' : 'bays'}
@@ -84,7 +84,7 @@ export function FacadeTool() {
         </Button>
       </div>
 
-      <fieldset disabled={readOnly} className="flex flex-col pier-2 px-2 disabled:opacity-50">
+      <fieldset disabled={readOnly} className="flex flex-col gap-2 px-2 disabled:opacity-50">
         <span className="text-xs text-muted-foreground">Apply to</span>
         <SegmentedControl<FacadeScope>
           value={scope}
@@ -101,14 +101,14 @@ export function FacadeTool() {
       </fieldset>
 
       {(live.length > 0 || detached) && (
-        <div className="mx-2 flex flex-col pier-2 rounded-lg border border-border/50 p-2">
+        <div className="mx-2 flex flex-col gap-2 rounded-lg border border-border/50 p-2">
           <span className="text-xs text-muted-foreground">
             {live.length
               ? `Selected ${live.length === 1 ? 'wall carries' : 'walls carry'} “${live[0]!.unit.name}”.`
               : 'This facade was made editable and no longer regenerates.'}
           </span>
           {live.length > 0 && (
-            <div className="grid grid-cols-2 pier-2">
+            <div className="grid grid-cols-2 gap-2">
               <Button
                 size="sm"
                 variant="outline"

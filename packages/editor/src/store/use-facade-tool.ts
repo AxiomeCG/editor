@@ -2,6 +2,8 @@ import { DEFAULT_FACADE_UNIT, type FacadeUnit } from '@pascal-app/core'
 import type { FacadeScope } from '@pascal-app/core/building'
 import { create } from 'zustand'
 
+export type FacadeStudioView = '3d' | '2d' | 'split'
+
 type FacadeToolState = {
   /** The unit the tool applies. */
   unit: FacadeUnit
@@ -12,6 +14,8 @@ type FacadeToolState = {
   /** Studio-only test run; never saved with the unit. */
   testWidth: number
   testHeight: number
+  studioView: FacadeStudioView
+  setStudioView: (view: FacadeStudioView) => void
   setUnit: (unit: FacadeUnit) => void
   setScope: (scope: FacadeScope) => void
   openStudio: () => void
@@ -28,6 +32,8 @@ export const useFacadeTool = create<FacadeToolState>((set, get) => ({
   selectedBay: null,
   testWidth: 8,
   testHeight: 3,
+  studioView: 'split',
+  setStudioView: (studioView) => set({ studioView }),
   setUnit: (unit) => set({ unit }),
   setScope: (scope) => set({ scope }),
   openStudio: () => {

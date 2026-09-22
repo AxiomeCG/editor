@@ -9,12 +9,14 @@ import {
 import { Plus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '../../../lib/utils'
-import { useFacadeTool } from '../../../store/use-facade-tool'
+import { type FacadeStudioView, useFacadeTool } from '../../../store/use-facade-tool'
 import { PanelSection } from '../controls/panel-section'
+import { SegmentedControl } from '../controls/segmented-control'
 import { SliderControl } from '../controls/slider-control'
 import { ToggleControl } from '../controls/toggle-control'
 import { Button } from '../primitives/button'
-import { FacadeElevation } from './facade-elevation'
+import { FacadeBay3D } from './facade-bay-3d'
+import { FacadeElevation, resolveElevation } from './facade-elevation'
 import { FacadeBayControls, FINISH_LABELS, newOpening } from './facade-bay-controls'
 
 const DEFAULT_APPEARANCE = { finish: 'plaster', wall: '#cfc5b7', trim: '#2f3133' } as const
@@ -49,7 +51,8 @@ export function FacadeStudio() {
   const selectedBay = useFacadeTool((s) => s.selectedBay)
   const testWidth = useFacadeTool((s) => s.testWidth)
   const testHeight = useFacadeTool((s) => s.testHeight)
-  const { setDraft, selectBay, setTestSize, closeStudio } = useFacadeTool.getState()
+  const studioView = useFacadeTool((s) => s.studioView)
+  const { setDraft, selectBay, setTestSize, setStudioView, closeStudio } = useFacadeTool.getState()
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -66,18 +69,22 @@ export function FacadeStudio() {
     setDraft({ ...draft, ...patch })
   }
   const bays = draft.bays
+  const placed = new Map<string, number>()
+  for (const placement of resolveElevation(draft, testWidth, testHeight).placements)
+    placed.set(placement.bay, (placed.get(placement.bay) ?? 0) + 1)
   const index = bays.findIndex((m) => m.key === selectedBay)
   const bay = index >= 0 ? bays[index] : undefined
   const replace = (next: FacadeBay) =>
     update({ bays: bays.map((m) => (m.key === next.key ? next : m)) })
 
   const addBay = () => {
+    // Pinned, so it takes its place at once and the repeating bays visibly reflow around it.
     const base: FacadeBay = {
       key: nextKey(bays),
-      width: 1.4,
-      horizontal: 'center',
-      widthMode: 'repeat',
-      offsetX: 0,
+      width: 1.2,
+      horizontal: 'left',
+      widthMode: 'fixed',
+      offsetX: 0.4,
       endPier: 0.4,
       pier: 1,
       remainder: 'center',
@@ -99,12 +106,22 @@ export function FacadeStudio() {
   return (
     <div className="absolute inset-0 flex bg-background text-foreground" aria-label="Facade studio">
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center pier-3 border-border/50 border-b px-4 py-2">
+        <div className="flex items-center gap-3 border-border/50 border-b px-4 py-2">
           <span className="text-sm font-medium">Facade studio</span>
           <span className="text-xs text-muted-foreground">
             One run, corner to corner. Drag the right corner to test other lengths.
           </span>
-          <div className="ml-auto flex w-[420px] pier-2">
+          <SegmentedControl<FacadeStudioView>
+            className="ml-auto w-44"
+            value={studioView}
+            onChange={setStudioView}
+            options={[
+              { value: '3d', label: '3D' },
+              { value: '2d', label: '2D' },
+              { value: 'split', label: 'Split' },
+            ]}
+          />
+          <div className="flex w-[420px] gap-2">
             <SliderControl
               label="Test run"
               value={testWidth}
@@ -133,19 +150,32 @@ export function FacadeStudio() {
             />
           </div>
         </div>
-        <FacadeElevation
-          className="flex-1 p-8"
-          unit={draft}
-          width={testWidth}
-          height={testHeight}
-          selectedBay={selectedBay}
-          onSelectBay={selectBay}
-          onResize={(width) => setTestSize({ width })}
-        />
+        {studioView !== '2d' && (
+          <FacadeBay3D
+            className={studioView === 'split' ? 'basis-3/5' : 'flex-1'}
+            unit={draft}
+            width={testWidth}
+            height={testHeight}
+          />
+        )}
+        {studioView !== '3d' && (
+          <FacadeElevation
+            className={cn(
+              'min-h-0 p-8',
+              studioView === 'split' ? 'basis-2/5 border-border/50 border-t' : 'flex-1',
+            )}
+            unit={draft}
+            width={testWidth}
+            height={testHeight}
+            selectedBay={selectedBay}
+            onSelectBay={selectBay}
+            onResize={(width) => setTestSize({ width })}
+          />
+        )}
       </div>
 
       <aside className="flex w-[360px] shrink-0 flex-col border-border/50 border-l">
-        <div className="flex items-center pier-2 px-3 py-3">
+        <div className="flex items-center gap-2 px-3 py-3">
           <input
             aria-label="Unit name"
             value={draft.name}
@@ -166,7 +196,7 @@ export function FacadeStudio() {
             />
             {draft.appearance && (
               <>
-                <label className="flex items-center pier-2 text-xs text-muted-foreground">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="w-16 shrink-0">Material</span>
                   <select
                     aria-label="Facade finish"
@@ -186,7 +216,7 @@ export function FacadeStudio() {
                   </select>
                 </label>
                 {(['wall', 'trim'] as const).map((key) => (
-                  <label key={key} className="flex items-center pier-2 text-xs text-muted-foreground">
+                  <label key={key} className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="w-16 shrink-0">{key === 'wall' ? 'Wall' : 'Frames'}</span>
                     <input
                       type="color"
@@ -206,9 +236,10 @@ export function FacadeStudio() {
 
           <PanelSection title="Bays">
             <p className="text-[11px] leading-4 text-muted-foreground">
-              Earlier bays take their space first; a later one yields where they would overlap.
+              Pinned bays take their place first; repeating and stretching bays fill the space
+              left between them. Within each kind, the higher bay wins where two overlap.
             </p>
-            <ul className="flex flex-col pier-1">
+            <ul className="flex flex-col gap-1">
               {bays.map((m) => (
                 <li key={m.key}>
                   <button
@@ -223,7 +254,14 @@ export function FacadeStudio() {
                     )}
                   >
                     <span className="text-sm">{m.name ?? m.key}</span>
-                    <span className="text-[11px] text-muted-foreground">{describe(m)}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {describe(m)} ·{' '}
+                      {placed.get(m.key) ? (
+                        `×${placed.get(m.key)} on this run`
+                      ) : (
+                        <span className="text-amber-400">no room on this run</span>
+                      )}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -254,13 +292,13 @@ export function FacadeStudio() {
           )}
         </div>
 
-        <div className="flex flex-col pier-2 border-border/50 border-t p-3">
+        <div className="flex flex-col gap-2 border-border/50 border-t p-3">
           {error && (
             <p role="alert" className="text-xs text-destructive">
               {error}
             </p>
           )}
-          <div className="flex pier-2">
+          <div className="flex gap-2">
             <Button variant="ghost" className="flex-1 text-xs" onClick={() => closeStudio(false)}>
               Cancel
             </Button>

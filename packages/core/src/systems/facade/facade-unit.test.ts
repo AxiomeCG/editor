@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  bayCladdingRects,
   DEFAULT_FACADE_UNIT,
   type FacadeBay,
   type FacadeBayOpening,
@@ -191,9 +192,43 @@ describe('facade unit resolution', () => {
       }),
       run(9, 3.4),
     )
-    expect(placements).toHaveLength(5)
+    // The pinned door claims its column; the windows repeat in the 7.9 m left of it.
+    expect(placements).toHaveLength(4)
     expect(new Set(placements.map((p) => p.key)).size).toBe(placements.length)
     expect(placements.find((p) => p.bay === 'door')!.opening!.kind).toBe('door')
+  })
+
+  test('a pinned bay takes its place first and the repeating bays fill the rest', () => {
+    const unit = FacadeUnitSchema.parse({
+      name: 'Entrance',
+      bays: [
+        {
+          key: 'windows',
+          width: 1.4,
+          pier: 1,
+          endPier: 0.3,
+          opening: { width: 1.4, height: 1.6, sill: 0.8 },
+        },
+        {
+          key: 'door',
+          width: 1.2,
+          widthMode: 'fixed',
+          horizontal: 'left',
+          offsetX: 0.4,
+          opening: { kind: 'door', width: 1.2, height: 2.1 },
+        },
+      ],
+    })
+    const { placements, skipped } = resolveFacadeUnit(unit, run(10))
+    const door = placements.find((p) => p.bay === 'door')!
+    const windows = placements.filter((p) => p.bay === 'windows')
+
+    // Listed second, the door still wins: it is pinned; the windows reflow after it.
+    expect(door.left).toBeCloseTo(0.4, 10)
+    expect(skipped).toBe(0)
+    expect(windows.length).toBeGreaterThan(0)
+    for (const window of windows)
+      expect(window.left).toBeGreaterThanOrEqual(door.right + 0.3 - 1e-9)
   })
 
   test('rejects unusable input instead of returning a partial layout', () => {
@@ -304,5 +339,76 @@ describe('bays', () => {
     )
     expect(placements.map((p) => p.bay)).toEqual(['terrace'])
     expect(skipped).toBeGreaterThan(0)
+  })
+
+  test('a continuous balcony runs from the first repeat to the last', () => {
+    const { placements } = resolveFacadeUnit(
+      FacadeUnitSchema.parse({
+        name: 'Balcon filant',
+        bays: [
+          {
+            key: 'bay',
+            width: 1.4,
+            pier: 1,
+            endPier: 0.3,
+            opening: { kind: 'door', width: 1.2, height: 2.1 },
+            balcony: { span: 'continuous', depth: 0.8 },
+          },
+        ],
+      }),
+      run(10),
+    )
+    const withBalcony = placements.filter((p) => p.balcony)
+    expect(placements.length).toBeGreaterThan(1)
+    expect(withBalcony).toHaveLength(1)
+    expect(withBalcony[0]!.balcony!.left).toBeCloseTo(placements[0]!.left, 10)
+    expect(withBalcony[0]!.balcony!.right).toBeCloseTo(placements.at(-1)!.right, 10)
+  })
+})
+
+describe('bay cladding', () => {
+  const finish = { finish: 'siding', color: '#2b2d2f' }
+  /** A 3 m bay with a 1.2 m window centred in it, 0.9 m of wall either side. */
+  const rects = (infill?: object, spandrel?: object) => {
+    const placed = unit({ width: 3, widthMode: 'fixed', infill, spandrel }, { width: 1.2 })
+    const [placement] = resolveFacadeUnit(placed, run(3)).placements
+    return bayCladdingRects(placed.bays[0]!, placement!, 3.2).map((r) => ({
+      part: r.part,
+      left: Number(r.left.toFixed(3)),
+      right: Number(r.right.toFixed(3)),
+    }))
+  }
+
+  test('infill fills both sides of the opening to the bay edge by default', () => {
+    expect(rects(finish)).toEqual([
+      { part: 'infill-left', left: 0, right: 0.9 },
+      { part: 'infill-right', left: 2.1, right: 3 },
+    ])
+  })
+
+  test('infill can sit on one side only', () => {
+    expect(rects({ ...finish, sides: 'left' }).map((r) => r.part)).toEqual(['infill-left'])
+    expect(rects({ ...finish, sides: 'right' }).map((r) => r.part)).toEqual(['infill-right'])
+  })
+
+  test('a set infill width is measured from the opening and never passes the bay edge', () => {
+    expect(rects({ ...finish, width: 0.4 })).toEqual([
+      { part: 'infill-left', left: 0.5, right: 0.9 },
+      { part: 'infill-right', left: 2.1, right: 2.5 },
+    ])
+    expect(rects({ ...finish, width: 5 })[0]).toEqual({ part: 'infill-left', left: 0, right: 0.9 })
+  })
+
+  test('a spandrel can sit below the opening, above it, or both', () => {
+    expect(rects(undefined, finish).map((r) => r.part)).toEqual([
+      'spandrel-below',
+      'spandrel-above',
+    ])
+    expect(rects(undefined, { ...finish, parts: 'below' }).map((r) => r.part)).toEqual([
+      'spandrel-below',
+    ])
+    expect(rects(undefined, { ...finish, parts: 'above' }).map((r) => r.part)).toEqual([
+      'spandrel-above',
+    ])
   })
 })

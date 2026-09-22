@@ -52,7 +52,7 @@ function MetreSlider({
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center pier-2">
+    <div className="flex items-center gap-2">
       <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -83,7 +83,7 @@ function AnchorGlyph({ axis, value }: { axis: 'horizontal' | 'vertical'; value: 
 const horizontalOptions = (['left', 'center', 'right'] as FacadeUnitHorizontalAnchor[]).map((value) => ({
   value,
   label: (
-    <span className="flex items-center pier-1.5" title={`Pinned to the ${value === 'center' ? 'centre' : `${value} corner`}`}>
+    <span className="flex items-center gap-1.5" title={`Pinned to the ${value === 'center' ? 'centre' : `${value} corner`}`}>
       <AnchorGlyph axis="horizontal" value={value} />
       {value === 'center' ? 'Centre' : value === 'left' ? 'Left' : 'Right'}
     </span>
@@ -92,7 +92,7 @@ const horizontalOptions = (['left', 'center', 'right'] as FacadeUnitHorizontalAn
 const verticalOptions = (['bottom', 'center', 'top'] as FacadeUnitVerticalAnchor[]).map((value) => ({
   value,
   label: (
-    <span className="flex items-center pier-1.5">
+    <span className="flex items-center gap-1.5">
       <AnchorGlyph axis="vertical" value={value} />
       {value === 'center' ? 'Middle' : value === 'bottom' ? 'Floor' : 'Top'}
     </span>
@@ -109,8 +109,41 @@ export const newOpening = (bay: FacadeBay): FacadeBayOpening => ({
   heightMode: 'fixed',
   offsetX: 0,
   offsetY: 0,
+  windowType: 'casement',
+  columns: 1,
+  rows: 1,
+  doorType: 'french',
 })
-const newBalcony = (): FacadeBayBalcony => ({ depth: 1.4, railing: 'slat', offsetX: 0 })
+const newBalcony = (): FacadeBayBalcony => ({
+  depth: 1.4,
+  railing: 'slat',
+  span: 'bay',
+  offsetX: 0,
+})
+
+/** The operations a facade window is likely to use, in the order people reach for them. */
+const WINDOW_TYPES: [FacadeBayOpening['windowType'], string][] = [
+  ['casement', 'Casement'],
+  ['fixed', 'Fixed'],
+  ['double-hung', 'Sash (double-hung)'],
+  ['single-hung', 'Sash (single-hung)'],
+  ['sliding', 'Sliding'],
+  ['awning', 'Awning'],
+  ['hopper', 'Hopper'],
+  ['louvered', 'Louvred'],
+]
+const DOOR_TYPES: [FacadeBayOpening['doorType'], string][] = [
+  ['french', 'French (glazed)'],
+  ['hinged', 'Hinged'],
+  ['double', 'Double'],
+  ['sliding', 'Sliding'],
+  ['folding', 'Folding'],
+  ['garage-sectional', 'Garage'],
+]
+
+const MIN_SIDE_ROOM = 0.05
+/** Room left each side when turning infill on for a bay its opening fills. */
+const DEFAULT_SIDE_ROOM = 0.4
 
 export const FINISH_LABELS: Record<FacadeFinish, string> = {
   brick: 'Brick',
@@ -123,12 +156,12 @@ export const FINISH_LABELS: Record<FacadeFinish, string> = {
 }
 
 /** Finish, colour and how the panels sit on the face. */
-function CladdingControls({
+function CladdingControls<T extends FacadeCladding>({
   value,
   onChange,
 }: {
-  value: FacadeCladding
-  onChange: (value: FacadeCladding) => void
+  value: T
+  onChange: (value: T) => void
 }) {
   return (
     <>
@@ -193,6 +226,14 @@ export function FacadeBayControls({
   const { opening, balcony } = bay
   const setOpening = (patch: Partial<FacadeBayOpening>) => set({ opening: { ...opening!, ...patch } })
   const setBalcony = (patch: Partial<FacadeBayBalcony>) => set({ balcony: { ...balcony!, ...patch } })
+  // How much of the bay is left beside a fixed opening, for the infill to clad.
+  const sideRoom = !opening
+    ? Number.POSITIVE_INFINITY
+    : opening.widthMode === 'stretch'
+      ? opening.offsetX * 2
+      : bay.widthMode === 'stretch'
+        ? Number.POSITIVE_INFINITY
+        : bay.width - opening.width
   const offsetLabel =
     bay.widthMode === 'stretch'
       ? 'Inset'
@@ -202,7 +243,7 @@ export function FacadeBayControls({
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center pier-1 px-3 py-2">
+      <div className="flex items-center gap-1 px-3 py-2">
         <input
           aria-label="Bay name"
           value={bay.name ?? ''}
@@ -303,6 +344,57 @@ export function FacadeBayControls({
                 ]}
               />
             </Row>
+            {opening.kind === 'window' ? (
+              <>
+                <Row label="Operation">
+                  <select
+                    aria-label="Window operation"
+                    value={opening.windowType}
+                    onChange={(event) =>
+                      setOpening({ windowType: event.target.value as FacadeBayOpening['windowType'] })
+                    }
+                    className="h-8 w-full rounded-md border border-border/50 bg-background px-2 text-xs text-foreground"
+                  >
+                    {WINDOW_TYPES.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+                <Row label="Panes across">
+                  <SegmentedControl
+                    value={String(opening.columns)}
+                    onChange={(columns) => setOpening({ columns: Number(columns) })}
+                    options={['1', '2', '3', '4'].map((value) => ({ value, label: value }))}
+                  />
+                </Row>
+                <Row label="Panes up">
+                  <SegmentedControl
+                    value={String(opening.rows)}
+                    onChange={(rows) => setOpening({ rows: Number(rows) })}
+                    options={['1', '2', '3'].map((value) => ({ value, label: value }))}
+                  />
+                </Row>
+              </>
+            ) : (
+              <Row label="Door">
+                <select
+                  aria-label="Door style"
+                  value={opening.doorType}
+                  onChange={(event) =>
+                    setOpening({ doorType: event.target.value as FacadeBayOpening['doorType'] })
+                  }
+                  className="h-8 w-full rounded-md border border-border/50 bg-background px-2 text-xs text-foreground"
+                >
+                  {DOOR_TYPES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            )}
             <Row label="Width">
               <SegmentedControl
                 value={opening.widthMode}
@@ -363,17 +455,62 @@ export function FacadeBayControls({
       </PanelSection>
 
       <PanelSection title="Infill">
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          {opening
+            ? 'The sides of the bay, beside the opening, floor to ceiling.'
+            : 'Cladding across the whole bay.'}
+        </p>
         <ToggleControl
           label={opening ? 'Panels beside the opening' : 'Clad the whole bay'}
           checked={!!bay.infill}
           onChange={(on) =>
             set({
               infill: on
-                ? { finish: 'siding', color: '#2b2d2f', thickness: 0.03, standoff: 0 }
+                ? { finish: 'siding', color: '#2b2d2f', thickness: 0.03, standoff: 0, sides: 'both' }
                 : undefined,
+              // An opening as wide as its bay leaves no side to clad: make room.
+              ...(on && sideRoom < MIN_SIDE_ROOM && opening?.widthMode === 'fixed' && bay.widthMode !== 'stretch'
+                ? { width: opening.width + 2 * DEFAULT_SIDE_ROOM }
+                : {}),
             })
           }
         />
+        {bay.infill && sideRoom < MIN_SIDE_ROOM && (
+          <p role="status" className="text-[11px] leading-4 text-amber-400">
+            No room beside the opening: widen the bay or narrow the opening.
+          </p>
+        )}
+        {bay.infill && opening && (
+          <>
+            <Row label="Sides">
+              <SegmentedControl
+                value={bay.infill.sides}
+                onChange={(sides) => set({ infill: { ...bay.infill!, sides } })}
+                options={[
+                  { value: 'both', label: 'Both' },
+                  { value: 'left', label: 'Left' },
+                  { value: 'right', label: 'Right' },
+                ]}
+              />
+            </Row>
+            <ToggleControl
+              label="Fill to the edge of the bay"
+              checked={bay.infill.width === undefined}
+              onChange={(fill) =>
+                set({ infill: { ...bay.infill!, width: fill ? undefined : 0.5 } })
+              }
+            />
+            {bay.infill.width !== undefined && (
+              <MetreSlider
+                label="Panel width"
+                value={bay.infill.width}
+                min={0.05}
+                max={6}
+                onChange={(width) => set({ infill: { ...bay.infill!, width } })}
+              />
+            )}
+          </>
+        )}
         {bay.infill && (
           <CladdingControls value={bay.infill} onChange={(infill) => set({ infill })} />
         )}
@@ -381,19 +518,36 @@ export function FacadeBayControls({
 
       {opening && (
         <PanelSection title="Spandrel">
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            Below and above the opening, across its width — the band between one floor's
+            window and the next.
+          </p>
           <ToggleControl
             label="Panels below and above the opening"
             checked={!!bay.spandrel}
             onChange={(on) =>
               set({
                 spandrel: on
-                  ? { finish: 'brick', color: '#5a4136', thickness: 0.03, standoff: 0 }
+                  ? { finish: 'brick', color: '#5a4136', thickness: 0.03, standoff: 0, parts: 'both' }
                   : undefined,
               })
             }
           />
           {bay.spandrel && (
-            <CladdingControls value={bay.spandrel} onChange={(spandrel) => set({ spandrel })} />
+            <>
+              <Row label="Where">
+                <SegmentedControl
+                  value={bay.spandrel.parts}
+                  onChange={(parts) => set({ spandrel: { ...bay.spandrel!, parts } })}
+                  options={[
+                    { value: 'both', label: 'Both' },
+                    { value: 'below', label: 'Below' },
+                    { value: 'above', label: 'Above' },
+                  ]}
+                />
+              </Row>
+              <CladdingControls value={bay.spandrel} onChange={(spandrel) => set({ spandrel })} />
+            </>
           )}
         </PanelSection>
       )}
@@ -416,6 +570,16 @@ export function FacadeBayControls({
               <MetreSlider label="Width" value={balcony.width} min={0.6} max={12} onChange={(width) => setBalcony({ width })} />
             )}
             <MetreSlider label="Shift" value={balcony.offsetX} min={-6} max={6} onChange={(offsetX) => setBalcony({ offsetX })} />
+            <Row label="Span">
+              <SegmentedControl
+                value={balcony.span}
+                onChange={(span) => setBalcony({ span })}
+                options={[
+                  { value: 'bay', label: 'Each bay' },
+                  { value: 'continuous', label: 'Continuous' },
+                ]}
+              />
+            </Row>
             <Row label="Railing">
               <SegmentedControl
                 value={balcony.railing}
