@@ -38,7 +38,7 @@ describe('wall loop scope', () => {
     const inner = resolveWallLoop(nodes, walls[0]!.id, 'interior')
     expect(outer.walls).toHaveLength(4)
     expect(inner.walls.map((w) => w.id)).toEqual(outer.walls.map((w) => w.id))
-    inner.boundary.forEach((b, i) => expect(b.face).not.toBe(outer.boundary[i]!.face))
+    for (const [i, b] of inner.boundary.entries()) expect(b.face).not.toBe(outer.boundary[i]!.face)
     expect(() => resolveWallLoop(nodes, partition.id, 'interior')).toThrow('perimeter')
     expect(() => resolveWallLoop(nodes, partition.id, 'exterior')).toThrow('perimeter')
   })

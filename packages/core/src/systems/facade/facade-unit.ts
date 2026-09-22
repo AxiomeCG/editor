@@ -117,7 +117,12 @@ export function resolveFacadeUnit(
 ): FacadeUnitResolution {
   const clearance = options.clearance ?? FACADE_UNIT_CLEARANCE
   const maxRepeat = options.maxRepeat ?? FACADE_UNIT_MAX_REPEAT
-  if (!Number.isFinite(bay.width) || !Number.isFinite(bay.height) || bay.width <= 0 || bay.height <= 0)
+  if (
+    !Number.isFinite(bay.width) ||
+    !Number.isFinite(bay.height) ||
+    bay.width <= 0 ||
+    bay.height <= 0
+  )
     throw Error('Use a positive bay width and height.')
   if (!Number.isFinite(clearance) || clearance < 0)
     throw Error('Use a non-negative opening clearance.')
@@ -144,7 +149,10 @@ export function resolveFacadeUnit(
         x: span.left + span.width / 2,
         y: vertical.bottom + vertical.height / 2,
       }
-      if (overlapsObstacle(placement, obstacles, clearance) || overlapsObstacle(placement, occupied, clearance)) {
+      if (
+        overlapsObstacle(placement, obstacles, clearance) ||
+        overlapsObstacle(placement, occupied, clearance)
+      ) {
         skipped++
         continue
       }
@@ -181,7 +189,9 @@ function repeatSpans(opening: FacadeUnitOpening, bayWidth: number, maxRepeat: nu
   const count = Math.floor((available + gap) / (width + gap))
   if (count < 1) return []
   if (count > maxRepeat)
-    throw Error(`This wall would need more than ${maxRepeat} windows. Increase their width or spacing.`)
+    throw Error(
+      `This wall would need more than ${maxRepeat} windows. Increase their width or spacing.`,
+    )
   const total = count * width + (count - 1) * gap
   let step = width + gap
   let start = (bayWidth - total) / 2

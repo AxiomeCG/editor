@@ -15,11 +15,11 @@ const unit = (opening: Partial<FacadeUnit['openings'][number]>, bay = { width: 1
 const bay = (width: number, height = 3.2) => ({ width, height })
 
 /** The authored facade tool's rule, kept here as the parity oracle for the default unit. */
-function legacyRows(width: number, layout: { width: number; height: number; gap: number; sill: number }) {
-  const columns = Math.max(
-    0,
-    Math.floor((width - 0.4 + layout.gap) / (layout.width + layout.gap)),
-  )
+function legacyRows(
+  width: number,
+  layout: { width: number; height: number; gap: number; sill: number },
+) {
+  const columns = Math.max(0, Math.floor((width - 0.4 + layout.gap) / (layout.width + layout.gap)))
   if (layout.sill + layout.height + 0.15 > 3.2) return []
   const start = (width - (columns * layout.width + (columns - 1) * layout.gap)) / 2
   return Array.from({ length: columns }, (_, index) => start + index * (layout.width + layout.gap))
@@ -45,8 +45,14 @@ describe('facade unit resolution', () => {
   })
 
   test('anchors a fixed opening to the left, right and center of the bay', () => {
-    const left = resolveFacadeUnit(unit({ widthMode: 'fixed', horizontal: 'left', offsetX: 0.3 }), bay(10))
-    const right = resolveFacadeUnit(unit({ widthMode: 'fixed', horizontal: 'right', offsetX: 0.3 }), bay(10))
+    const left = resolveFacadeUnit(
+      unit({ widthMode: 'fixed', horizontal: 'left', offsetX: 0.3 }),
+      bay(10),
+    )
+    const right = resolveFacadeUnit(
+      unit({ widthMode: 'fixed', horizontal: 'right', offsetX: 0.3 }),
+      bay(10),
+    )
     const center = resolveFacadeUnit(
       unit({ widthMode: 'fixed', horizontal: 'center', offsetX: 0.5 }),
       bay(10),
@@ -81,7 +87,13 @@ describe('facade unit resolution', () => {
       expect(placement.right - placement.left).toBeCloseTo(1.4, 10)
 
     const edgeAlign = resolveFacadeUnit(
-      unit({ widthMode: 'repeat', margin: 0.2, gap: 1, horizontal: 'right', remainder: 'edge-align' }),
+      unit({
+        widthMode: 'repeat',
+        margin: 0.2,
+        gap: 1,
+        horizontal: 'right',
+        remainder: 'edge-align',
+      }),
       bay(12),
     )
     expect(edgeAlign.placements).toHaveLength(5)
@@ -116,7 +128,14 @@ describe('facade unit resolution', () => {
       FacadeUnitSchema.parse({
         name: 'Entry',
         openings: [
-          { key: 'door', kind: 'door', width: 1.1, height: 2.1, widthMode: 'fixed', horizontal: 'right' },
+          {
+            key: 'door',
+            kind: 'door',
+            width: 1.1,
+            height: 2.1,
+            widthMode: 'fixed',
+            horizontal: 'right',
+          },
         ],
       }),
       bay(6, 3.2),
@@ -159,7 +178,14 @@ describe('facade unit resolution', () => {
         name: 'Punched bay',
         openings: [
           { key: 'upper', width: 1.2, height: 0.8, sill: 2.4, widthMode: 'repeat', gap: 1.2 },
-          { key: 'door', kind: 'door', width: 1.1, height: 2.1, widthMode: 'fixed', horizontal: 'right' },
+          {
+            key: 'door',
+            kind: 'door',
+            width: 1.1,
+            height: 2.1,
+            widthMode: 'fixed',
+            horizontal: 'right',
+          },
         ],
       }),
       bay(9, 3.4),
@@ -180,7 +206,9 @@ describe('facade unit resolution', () => {
   test('a unit survives a schema round trip, which is what a catalog save will persist', () => {
     const parsed = FacadeUnitSchema.parse({
       name: 'The Victor bay',
-      openings: [{ key: 'living', width: 1.7, height: 2.5, widthMode: 'repeat', remainder: 'gap-stretch' }],
+      openings: [
+        { key: 'living', width: 1.7, height: 2.5, widthMode: 'repeat', remainder: 'gap-stretch' },
+      ],
     })
     expect(FacadeUnitSchema.parse(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed)
   })

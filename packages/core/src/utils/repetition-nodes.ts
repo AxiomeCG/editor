@@ -1,6 +1,6 @@
-import { areSemanticValuesEqual } from './semantic-equal'
 import type { AnyNode, AnyNodeId } from '../schema'
 import type { RepetitionPlan } from './repetition'
+import { areSemanticValuesEqual } from './semantic-equal'
 
 type RepetitionScene = {
   nodes: Record<AnyNodeId, AnyNode>
