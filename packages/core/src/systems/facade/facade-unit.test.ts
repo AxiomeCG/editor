@@ -1,84 +1,95 @@
 import { describe, expect, test } from 'bun:test'
 import {
   DEFAULT_FACADE_UNIT,
-  type FacadeUnit,
+  type FacadeModule,
+  type FacadeModuleOpening,
   FacadeUnitSchema,
   resolveFacadeUnit,
 } from './facade-unit'
 
-const unit = (opening: Partial<FacadeUnit['openings'][number]>, bay = { width: 10, height: 3.2 }) =>
+/** A one-module unit: layout on the module, sizing of the opening inside it. */
+const unit = (
+  module: Partial<Omit<FacadeModule, 'opening' | 'balcony'>> = {},
+  opening: Partial<FacadeModuleOpening> = {},
+) =>
   FacadeUnitSchema.parse({
     name: 'Test unit',
-    openings: [{ key: 'window', width: 1.4, height: 1.6, sill: 0.8, ...opening }],
+    modules: [
+      {
+        key: 'window',
+        width: 1.4,
+        ...module,
+        opening: { width: 1.4, height: 1.6, sill: 0.8, ...opening },
+      },
+    ],
   })
 
-const bay = (width: number, height = 3.2) => ({ width, height })
+const run = (width: number, height = 3.2) => ({ width, height })
 
-/** The authored facade tool's rule, kept here as the parity oracle for the default unit. */
-function legacyRows(
-  width: number,
-  layout: { width: number; height: number; gap: number; sill: number },
-) {
-  const columns = Math.max(0, Math.floor((width - 0.4 + layout.gap) / (layout.width + layout.gap)))
-  if (layout.sill + layout.height + 0.15 > 3.2) return []
-  const start = (width - (columns * layout.width + (columns - 1) * layout.gap)) / 2
-  return Array.from({ length: columns }, (_, index) => start + index * (layout.width + layout.gap))
+/** The authored facade tool's centred row, kept as the parity oracle for the default unit. */
+function legacyRows(width: number) {
+  const columns = Math.max(0, Math.floor((width - 0.4 + 1) / 2.4))
+  const start = (width - (columns * 1.4 + (columns - 1) * 1)) / 2
+  return Array.from({ length: columns }, (_, index) => start + index * 2.4)
 }
 
 describe('facade unit resolution', () => {
-  test('the default unit reproduces the authored facade row for many bay widths', () => {
-    const layout = { width: 1.4, height: 1.6, gap: 1, sill: 0.8 }
+  test('the default unit reproduces the authored facade row for many run widths', () => {
     for (const width of [3, 4.2, 6, 8.7, 10, 12.5, 20]) {
-      const { placements } = resolveFacadeUnit(DEFAULT_FACADE_UNIT, bay(width))
-      expect(placements.map((p) => p.left)).toEqual(legacyRows(width, layout))
-      for (const placement of placements) {
-        expect(placement.right - placement.left).toBeCloseTo(layout.width, 10)
-        expect(placement.bottom).toBeCloseTo(layout.sill, 10)
-        expect(placement.top - placement.bottom).toBeCloseTo(layout.height, 10)
+      const { placements } = resolveFacadeUnit(DEFAULT_FACADE_UNIT, run(width))
+      expect(placements.map((p) => p.opening!.left)).toEqual(
+        legacyRows(width).map((left) => expect.closeTo(left, 10)),
+      )
+      for (const { opening } of placements) {
+        expect(opening!.right - opening!.left).toBeCloseTo(1.4, 10)
+        expect(opening!.bottom).toBeCloseTo(0.8, 10)
+        expect(opening!.top - opening!.bottom).toBeCloseTo(1.6, 10)
       }
     }
   })
 
   test('reports the same placements for the same input, so a resize or reload is stable', () => {
-    const subject = unit({ widthMode: 'repeat', remainder: 'gap-stretch' })
-    expect(resolveFacadeUnit(subject, bay(9.4))).toEqual(resolveFacadeUnit(subject, bay(9.4)))
+    const subject = unit({ remainder: 'gap-stretch' })
+    expect(resolveFacadeUnit(subject, run(9.4))).toEqual(resolveFacadeUnit(subject, run(9.4)))
   })
 
-  test('anchors a fixed opening to the left, right and center of the bay', () => {
+  test('anchors a fixed module to the left corner, the right corner and the centre', () => {
     const left = resolveFacadeUnit(
       unit({ widthMode: 'fixed', horizontal: 'left', offsetX: 0.3 }),
-      bay(10),
+      run(10),
     )
     const right = resolveFacadeUnit(
       unit({ widthMode: 'fixed', horizontal: 'right', offsetX: 0.3 }),
-      bay(10),
+      run(10),
     )
-    const center = resolveFacadeUnit(
+    const centre = resolveFacadeUnit(
       unit({ widthMode: 'fixed', horizontal: 'center', offsetX: 0.5 }),
-      bay(10),
+      run(10),
     )
     expect(left.placements[0]!.left).toBeCloseTo(0.3, 10)
     expect(right.placements[0]!.right).toBeCloseTo(9.7, 10)
-    expect(center.placements[0]!.x).toBeCloseTo(5.5, 10)
-    expect(left.placements[0]!.right - left.placements[0]!.left).toBeCloseTo(1.4, 10)
+    expect(centre.placements[0]!.opening!.x).toBeCloseTo(5.5, 10)
   })
 
-  test('stretches an opening across the bay less its inset on both sides', () => {
+  test('a stretching module and opening span the run less their insets', () => {
     const { placements } = resolveFacadeUnit(
-      unit({ widthMode: 'stretch', offsetX: 0.25, heightMode: 'stretch', sill: 0.5, offsetY: 0.3 }),
-      bay(10, 4),
+      unit(
+        { widthMode: 'stretch', offsetX: 0.25 },
+        { widthMode: 'stretch', heightMode: 'stretch', sill: 0.5, offsetY: 0.3 },
+      ),
+      run(10, 4),
     )
     expect(placements).toHaveLength(1)
-    expect(placements[0]!.left).toBeCloseTo(0.25, 10)
-    expect(placements[0]!.right).toBeCloseTo(9.75, 10)
-    expect(placements[0]!.bottom).toBeCloseTo(0.5, 10)
-    expect(placements[0]!.top).toBeCloseTo(3.7, 10)
+    expect(placements[0]!.opening!.left).toBeCloseTo(0.25, 10)
+    expect(placements[0]!.opening!.right).toBeCloseTo(9.75, 10)
+    expect(placements[0]!.opening!.bottom).toBeCloseTo(0.5, 10)
+    expect(placements[0]!.opening!.top).toBeCloseTo(3.7, 10)
   })
 
-  test('keeps real window dimensions when repeating, and absorbs the remainder per policy', () => {
+  test('keeps real dimensions when repeating, and puts the leftover where the unit says', () => {
     const gapStretch = resolveFacadeUnit(
-      unit({ widthMode: 'repeat', margin: 0.2, gap: 1, remainder: 'gap-stretch' }),
-      bay(10),
+      unit({ margin: 0.2, gap: 1, remainder: 'gap-stretch' }),
+      run(10),
     )
     expect(gapStretch.placements).toHaveLength(4)
     expect(gapStretch.placements[0]!.left).toBeCloseTo(0.2, 10)
@@ -87,38 +98,32 @@ describe('facade unit resolution', () => {
       expect(placement.right - placement.left).toBeCloseTo(1.4, 10)
 
     const edgeAlign = resolveFacadeUnit(
-      unit({
-        widthMode: 'repeat',
-        margin: 0.2,
-        gap: 1,
-        horizontal: 'right',
-        remainder: 'edge-align',
-      }),
-      bay(12),
+      unit({ margin: 0.2, gap: 1, horizontal: 'right', remainder: 'edge-align' }),
+      run(12),
     )
     expect(edgeAlign.placements).toHaveLength(5)
     expect(edgeAlign.placements[0]!.left).toBeCloseTo(0.8, 10)
     expect(edgeAlign.placements.at(-1)!.right).toBeCloseTo(11.8, 10)
 
-    const centered = resolveFacadeUnit(unit({ widthMode: 'repeat', margin: 0.2, gap: 1 }), bay(11))
-    expect(centered.placements[0]!.left).toBeCloseTo(1.2, 10)
-    expect(centered.placements.at(-1)!.right).toBeCloseTo(9.8, 10)
+    const centred = resolveFacadeUnit(unit({ margin: 0.2, gap: 1 }), run(11))
+    expect(centred.placements[0]!.left).toBeCloseTo(1.2, 10)
+    expect(centred.placements.at(-1)!.right).toBeCloseTo(9.8, 10)
   })
 
-  test('places nothing when the bay is narrower than the unit margins allow', () => {
-    expect(resolveFacadeUnit(unit({ widthMode: 'repeat' }), bay(1)).placements).toEqual([])
-    expect(resolveFacadeUnit(unit({ widthMode: 'fixed' }), bay(1)).placements).toEqual([])
+  test('places nothing when the run is narrower than the module and its margins', () => {
+    expect(resolveFacadeUnit(unit(), run(1)).placements).toEqual([])
+    expect(resolveFacadeUnit(unit({ widthMode: 'fixed' }), run(1)).placements).toEqual([])
   })
 
-  test('pins an opening to the vertical center and to the top', () => {
-    const center = resolveFacadeUnit(unit({ vertical: 'center' }), bay(10, 4))
-    const top = resolveFacadeUnit(unit({ vertical: 'top', sill: 0.5 }), bay(10, 4))
-    expect(center.placements[0]!.bottom).toBeCloseTo(1.2, 10)
-    expect(top.placements[0]!.top).toBeCloseTo(3.5, 10)
+  test('pins an opening to the vertical centre and to the top', () => {
+    const centre = resolveFacadeUnit(unit({}, { vertical: 'center' }), run(10, 4))
+    const top = resolveFacadeUnit(unit({}, { vertical: 'top', sill: 0.5 }), run(10, 4))
+    expect(centre.placements[0]!.opening!.bottom).toBeCloseTo(1.2, 10)
+    expect(top.placements[0]!.opening!.top).toBeCloseTo(3.5, 10)
   })
 
-  test('drops an opening that cannot fit the bay height instead of clipping it', () => {
-    const { placements, skipped } = resolveFacadeUnit(unit({}), bay(10, 2))
+  test('drops a module whose opening cannot fit the storey instead of clipping it', () => {
+    const { placements, skipped } = resolveFacadeUnit(unit(), run(10, 2))
     expect(placements).toEqual([])
     expect(skipped).toBe(0)
   })
@@ -127,89 +132,177 @@ describe('facade unit resolution', () => {
     const { placements } = resolveFacadeUnit(
       FacadeUnitSchema.parse({
         name: 'Entry',
-        openings: [
+        modules: [
           {
             key: 'door',
-            kind: 'door',
             width: 1.1,
-            height: 2.1,
             widthMode: 'fixed',
             horizontal: 'right',
+            opening: { kind: 'door', width: 1.1, height: 2.1 },
           },
         ],
       }),
-      bay(6, 3.2),
+      run(6, 3.2),
     )
     expect(placements).toHaveLength(1)
-    expect(placements[0]!.kind).toBe('door')
-    expect(placements[0]!.bottom).toBeCloseTo(0, 10)
-    expect(placements[0]!.top).toBeCloseTo(2.1, 10)
+    expect(placements[0]!.opening!.kind).toBe('door')
+    expect(placements[0]!.opening!.bottom).toBeCloseTo(0, 10)
+    expect(placements[0]!.opening!.top).toBeCloseTo(2.1, 10)
   })
 
   test('never lets two openings in one unit share the same space', () => {
+    const module = (key: string) => ({
+      key,
+      width: 2,
+      widthMode: 'fixed',
+      horizontal: 'left',
+      opening: { width: 2, height: 1, sill: 0.5 },
+    })
     const { placements, skipped } = resolveFacadeUnit(
-      FacadeUnitSchema.parse({
-        name: 'Colliding bay',
-        openings: [
-          { key: 'lower', width: 2, height: 1, sill: 0.5, widthMode: 'fixed', horizontal: 'left' },
-          { key: 'upper', width: 2, height: 1, sill: 0.5, widthMode: 'fixed', horizontal: 'left' },
-        ],
-      }),
-      bay(6),
+      FacadeUnitSchema.parse({ name: 'Colliding', modules: [module('lower'), module('upper')] }),
+      run(6),
     )
-    expect(placements).toHaveLength(1)
-    expect(placements[0]!.key).toBe('u:lower:0')
+    expect(placements.map((p) => p.key)).toEqual(['lower:0'])
     expect(skipped).toBe(1)
   })
 
-  test('counts an opening skipped by an existing opening and keeps the rest', () => {
-    const { placements, skipped } = resolveFacadeUnit(DEFAULT_FACADE_UNIT, bay(10), [
+  test('counts a module skipped by an existing opening and keeps the rest', () => {
+    const { placements, skipped } = resolveFacadeUnit(DEFAULT_FACADE_UNIT, run(10), [
       { left: 3, right: 4.6, bottom: 0.7, top: 2.5 },
     ])
     expect(skipped).toBe(1)
-    expect(placements).toHaveLength(3)
-    for (const [index, left] of [0.7, 5.5, 7.9].entries())
-      expect(placements[index]!.left).toBeCloseTo(left, 10)
+    expect(placements.map((p) => p.left)).toEqual([0.7, 5.5, 7.9].map((x) => expect.closeTo(x, 10)))
   })
 
-  test('namespaces placement keys per opening so a multi-opening unit never collides', () => {
+  test('keys placements by module so a multi-module unit never collides', () => {
     const { placements } = resolveFacadeUnit(
       FacadeUnitSchema.parse({
         name: 'Punched bay',
-        openings: [
-          { key: 'upper', width: 1.2, height: 0.8, sill: 2.4, widthMode: 'repeat', gap: 1.2 },
+        modules: [
+          { key: 'upper', width: 1.2, gap: 1.2, opening: { width: 1.2, height: 0.8, sill: 2.4 } },
           {
             key: 'door',
-            kind: 'door',
             width: 1.1,
-            height: 2.1,
             widthMode: 'fixed',
             horizontal: 'right',
+            opening: { kind: 'door', width: 1.1, height: 2.1 },
           },
         ],
       }),
-      bay(9, 3.4),
+      run(9, 3.4),
     )
     expect(placements).toHaveLength(5)
     expect(new Set(placements.map((p) => p.key)).size).toBe(placements.length)
-    expect(placements.every((p) => p.key.startsWith('u:'))).toBe(true)
-    expect(placements.find((p) => p.key.startsWith('u:door:'))!.kind).toBe('door')
+    expect(placements.find((p) => p.module === 'door')!.opening!.kind).toBe('door')
   })
 
   test('rejects unusable input instead of returning a partial layout', () => {
-    expect(() => resolveFacadeUnit(unit({ width: 0.2 }), bay(10))).toThrow()
-    expect(() => resolveFacadeUnit(unit({}), bay(0))).toThrow()
-    const dense = unit({ width: 0.3, gap: 0, margin: 0, widthMode: 'repeat' })
-    expect(() => resolveFacadeUnit(dense, bay(1000))).toThrow(/more than 96 windows/)
+    expect(() => resolveFacadeUnit(unit({}, { width: 0.2 }), run(10))).toThrow()
+    expect(() => resolveFacadeUnit(unit(), run(0))).toThrow()
+    const dense = unit({ width: 0.3, gap: 0, margin: 0 }, { width: 0.3 })
+    expect(() => resolveFacadeUnit(dense, run(1000))).toThrow(/more than 96 repeats/)
+    expect(() =>
+      FacadeUnitSchema.parse({
+        name: 'Twins',
+        modules: [
+          { key: 'a', width: 1 },
+          { key: 'a', width: 1 },
+        ],
+      }),
+    ).toThrow('Each module in a unit needs its own key.')
   })
 
-  test('a unit survives a schema round trip, which is what a catalog save will persist', () => {
+  test('a unit survives a schema round trip, which is what a catalog save persists', () => {
     const parsed = FacadeUnitSchema.parse({
       name: 'The Victor bay',
-      openings: [
-        { key: 'living', width: 1.7, height: 2.5, widthMode: 'repeat', remainder: 'gap-stretch' },
+      appearance: { finish: 'brick', wall: '#815449', trim: '#2b2b2b' },
+      modules: [
+        {
+          key: 'living',
+          width: 2.4,
+          remainder: 'gap-stretch',
+          opening: { kind: 'door', width: 1.7, height: 2.5 },
+          balcony: { depth: 1.2, railing: 'glass' },
+        },
       ],
     })
     expect(FacadeUnitSchema.parse(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed)
+  })
+})
+
+describe('modules', () => {
+  const doorBay = FacadeUnitSchema.parse({
+    name: 'Door bays',
+    modules: [
+      {
+        key: 'bay',
+        width: 2.4,
+        gap: 0.6,
+        margin: 0.3,
+        opening: { kind: 'door', width: 1.2, height: 2.2 },
+        balcony: { depth: 1.2, railing: 'glass' },
+      },
+    ],
+  })
+
+  test('a repeating module multiplies its door and balcony together', () => {
+    const { placements } = resolveFacadeUnit(doorBay, run(10))
+    expect(placements).toHaveLength(3)
+    for (const placement of placements) {
+      const doorCentre = placement.opening!.x
+      const balconyCentre = (placement.balcony!.left + placement.balcony!.right) / 2
+      expect(balconyCentre).toBeCloseTo(doorCentre, 10)
+      expect(placement.balcony!.right - placement.balcony!.left).toBeCloseTo(2.4, 10)
+      expect(placement.balcony!.depth).toBe(1.2)
+    }
+  })
+
+  test('a balcony wider than its module is clipped to the run, never past a corner', () => {
+    const { placements } = resolveFacadeUnit(
+      FacadeUnitSchema.parse({
+        name: 'Corner balcony',
+        modules: [
+          {
+            key: 'end',
+            width: 1,
+            widthMode: 'fixed',
+            horizontal: 'left',
+            balcony: { width: 3 },
+          },
+        ],
+      }),
+      run(6),
+    )
+    expect(placements[0]!.balcony!.left).toBe(0)
+    expect(placements[0]!.balcony!.right).toBeCloseTo(2, 10)
+  })
+
+  test('a module that is only a balcony makes a continuous terrace', () => {
+    const { placements } = resolveFacadeUnit(
+      FacadeUnitSchema.parse({
+        name: 'Terrace',
+        modules: [{ key: 'terrace', width: 1, widthMode: 'stretch', offsetX: 0.2, balcony: {} }],
+      }),
+      run(8),
+    )
+    expect(placements).toHaveLength(1)
+    expect(placements[0]!.opening).toBeUndefined()
+    expect(placements[0]!.balcony!.left).toBeCloseTo(0.2, 10)
+    expect(placements[0]!.balcony!.right).toBeCloseTo(7.8, 10)
+  })
+
+  test('two balconies never overlap: the later module yields', () => {
+    const { placements, skipped } = resolveFacadeUnit(
+      FacadeUnitSchema.parse({
+        name: 'Clash',
+        modules: [
+          { key: 'terrace', width: 1, widthMode: 'stretch', balcony: {} },
+          { key: 'bay', width: 2, balcony: {} },
+        ],
+      }),
+      run(8),
+    )
+    expect(placements.map((p) => p.module)).toEqual(['terrace'])
+    expect(skipped).toBeGreaterThan(0)
   })
 })

@@ -37,6 +37,7 @@ import { ViewerZoneSystem } from '../../components/viewer-zone-system'
 import { type SaveStatus, useAutoSave } from '../../hooks/use-auto-save'
 import { useKeyboard } from '../../hooks/use-keyboard'
 import { useSaveShortcut } from '../../hooks/use-save-shortcut'
+import { subscribeFacadeResizes } from '../../lib/facade-resize-sync'
 import {
   createLocalProjectPresentationPersistence,
   type LocalProjectPresentationPersistence,
@@ -150,11 +151,13 @@ const EDITOR_DEFAULT_RENDER = { shading: 'solid' } as const
 function initializeEditorRuntime(): () => void {
   const unsubscribeSpatialGrid = initSpatialGridSync()
   const unsubscribeSpaceDetection = initSpaceDetectionSync(useScene, useEditor)
+  const unsubscribeFacadeResizes = subscribeFacadeResizes()
   initSFXBus()
 
   return () => {
     unsubscribeSpatialGrid()
     unsubscribeSpaceDetection?.()
+    unsubscribeFacadeResizes()
 
     spatialGridManager.clear()
     disposeSFXBus()

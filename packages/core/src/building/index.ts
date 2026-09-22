@@ -1,3 +1,7 @@
 export * from './balcony'
 export * from './balcony-access'
 export * from './balcony-edges'
+export * from './facade'
+export * from './facade-balconies'
+export * from './facade-runs'
+export * from './facade-scope'
