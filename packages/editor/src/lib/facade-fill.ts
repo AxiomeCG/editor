@@ -2,21 +2,15 @@ import {
   type AnyNodeId,
   applyNodeRepetition,
   type FacadeUnit,
-  generateSceneMaterialId,
-  type MaterialSchema,
   readWallFacade,
   releaseNodeRepetition,
   runAsSingleSceneHistoryStep,
-  SceneMaterial,
   useScene,
   type WallNode,
 } from '@pascal-app/core'
 import {
   FACADE_OWNERSHIP_KEYS,
-  type FacadeMaterialRefs,
   type FacadeWallTarget,
-  facadeCladdingKey,
-  facadeFinishMaterial,
   planFacadeFill,
 } from '@pascal-app/core/building'
 
@@ -29,38 +23,6 @@ function generate<T>(run: () => T): T {
     return runAsSingleSceneHistoryStep(useScene, run)
   } finally {
     generationDepth--
-  }
-}
-
-/** Reuse an identical scene material rather than adding a duplicate per fill. */
-function sceneMaterialRef(material: MaterialSchema, name: string) {
-  const scene = useScene.getState()
-  const key = JSON.stringify(material)
-  const existing = Object.values(scene.materials).find(
-    (entry) => JSON.stringify(entry.material) === key,
-  )
-  if (existing) return `scene:${existing.id}`
-  const entry = SceneMaterial.parse({ id: generateSceneMaterialId(), name, material })
-  scene.addSceneMaterial(entry)
-  return `scene:${entry.id}`
-}
-
-function facadeMaterialRefs(unit: FacadeUnit): FacadeMaterialRefs {
-  const cladding: Record<string, string> = {}
-  for (const bay of unit.bays)
-    for (const panel of [bay.infill, bay.spandrel]) {
-      if (!panel || cladding[facadeCladdingKey(panel)]) continue
-      cladding[facadeCladdingKey(panel)] = sceneMaterialRef(
-        facadeFinishMaterial(panel.finish, panel.color),
-        `Facade · ${panel.finish} panel`,
-      )
-    }
-  if (!unit.appearance) return { cladding }
-  const { finish, wall, trim } = unit.appearance
-  return {
-    finish: sceneMaterialRef(facadeFinishMaterial(finish, wall), `Facade · ${finish}`),
-    frame: sceneMaterialRef(facadeFinishMaterial('metal', trim), 'Facade · window frame'),
-    cladding,
   }
 }
 
@@ -83,17 +45,8 @@ export function applyFacade(
 ) {
   assertEditable()
   const walls = currentWalls(wallIds)
-  // A dry plan first, so an invalid wall throws before any scene material is added.
-  planFacadeFill({ walls, nodes: useScene.getState().nodes, unit, targets: options.targets })
   return generate(() => {
-    const refs = facadeMaterialRefs(unit)
-    const plan = planFacadeFill({
-      walls,
-      nodes: useScene.getState().nodes,
-      unit,
-      refs,
-      ...options,
-    })
+    const plan = planFacadeFill({ walls, nodes: useScene.getState().nodes, unit, ...options })
     for (const wallPlan of plan.walls) {
       applyNodeRepetition(wallPlan.openings, useScene.getState)
       applyNodeRepetition(wallPlan.balconies, useScene.getState)

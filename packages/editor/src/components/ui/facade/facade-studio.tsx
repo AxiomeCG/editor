@@ -1,7 +1,5 @@
 'use client'
 import {
-  FACADE_FINISHES,
-  type FacadeFinish,
   type FacadeBay,
   type FacadeUnit,
   FacadeUnitSchema,
@@ -13,13 +11,12 @@ import { type FacadeStudioView, useFacadeTool } from '../../../store/use-facade-
 import { PanelSection } from '../controls/panel-section'
 import { SegmentedControl } from '../controls/segmented-control'
 import { SliderControl } from '../controls/slider-control'
-import { ToggleControl } from '../controls/toggle-control'
 import { Button } from '../primitives/button'
 import { FacadeBay3D } from './facade-bay-3d'
 import { FacadeElevation, resolveElevation } from './facade-elevation'
-import { FacadeBayControls, FINISH_LABELS, newOpening } from './facade-bay-controls'
+import { FacadeBayControls, newOpening } from './facade-bay-controls'
+import { MaterialField } from './facade-material-field'
 
-const DEFAULT_APPEARANCE = { finish: 'plaster', wall: '#cfc5b7', trim: '#2f3133' } as const
 
 function describe(bay: FacadeBay) {
   const size =
@@ -188,50 +185,22 @@ export function FacadeStudio() {
         </div>
 
         <div className="subtle-scrollbar min-h-0 flex-1 overflow-y-auto">
-          <PanelSection title="Finish">
-            <ToggleControl
-              label="The unit carries its finish"
-              checked={!!draft.appearance}
-              onChange={(on) => update({ appearance: on ? { ...DEFAULT_APPEARANCE } : undefined })}
+          <PanelSection title="Paint">
+            <p className="text-[11px] leading-4 text-muted-foreground">
+              From the paint library. Left as is, the walls and frames keep their own paint.
+            </p>
+            <MaterialField
+              label="Wall"
+              value={draft.paint.wall}
+              onChange={(wall) => update({ paint: { ...draft.paint, wall } })}
+              onClear={() => update({ paint: { ...draft.paint, wall: undefined } })}
             />
-            {draft.appearance && (
-              <>
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="w-16 shrink-0">Material</span>
-                  <select
-                    aria-label="Facade finish"
-                    value={draft.appearance.finish}
-                    onChange={(event) =>
-                      update({
-                        appearance: { ...draft.appearance!, finish: event.target.value as FacadeFinish },
-                      })
-                    }
-                    className="h-8 min-w-0 flex-1 rounded-md border border-border/50 bg-background px-2 text-foreground"
-                  >
-                    {FACADE_FINISHES.map((finish) => (
-                      <option key={finish} value={finish}>
-                        {FINISH_LABELS[finish]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {(['wall', 'trim'] as const).map((key) => (
-                  <label key={key} className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="w-16 shrink-0">{key === 'wall' ? 'Wall' : 'Frames'}</span>
-                    <input
-                      type="color"
-                      aria-label={key === 'wall' ? 'Wall colour' : 'Frame colour'}
-                      value={draft.appearance![key]}
-                      onChange={(event) =>
-                        update({ appearance: { ...draft.appearance!, [key]: event.target.value } })
-                      }
-                      className="h-8 w-12 cursor-pointer rounded-md border border-border/50 bg-transparent"
-                    />
-                    <span className="font-mono">{draft.appearance![key]}</span>
-                  </label>
-                ))}
-              </>
-            )}
+            <MaterialField
+              label="Frames"
+              value={draft.paint.frame}
+              onChange={(frame) => update({ paint: { ...draft.paint, frame } })}
+              onClear={() => update({ paint: { ...draft.paint, frame: undefined } })}
+            />
           </PanelSection>
 
           <PanelSection title="Bays">

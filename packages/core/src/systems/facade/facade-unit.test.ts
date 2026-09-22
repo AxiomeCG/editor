@@ -250,7 +250,7 @@ describe('facade unit resolution', () => {
   test('a unit survives a schema round trip, which is what a catalog save persists', () => {
     const parsed = FacadeUnitSchema.parse({
       name: 'The Victor bay',
-      appearance: { finish: 'brick', wall: '#815449', trim: '#2b2b2b' },
+      paint: { wall: 'library:flooring-rusticbrick', frame: 'library:preset-charcoal' },
       bays: [
         {
           key: 'living',
@@ -367,7 +367,7 @@ describe('bays', () => {
 })
 
 describe('bay cladding', () => {
-  const finish = { finish: 'siding', color: '#2b2d2f' }
+  const finish = { material: 'library:preset-charcoal' }
   /** A 3 m bay with a 1.2 m window centred in it, 0.9 m of wall either side. */
   const rects = (infill?: object, spandrel?: object) => {
     const placed = unit({ width: 3, widthMode: 'fixed', infill, spandrel }, { width: 1.2 })

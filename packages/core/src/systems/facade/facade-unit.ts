@@ -23,25 +23,17 @@ export const FACADE_UNIT_CLEARANCE = 0.15
 export const FACADE_UNIT_MAX_REPEAT = 96
 const MIN_BALCONY_WIDTH = 0.6
 
-export const FACADE_FINISHES = [
-  'brick',
-  'stone',
-  'plaster',
-  'siding',
-  'timber',
-  'glass',
-  'metal',
-] as const
-export type FacadeFinish = (typeof FACADE_FINISHES)[number]
+/** A paint reference, as on any node slot: `library:<id>` or `scene:<id>`. */
+const MaterialRef = z.string().regex(/^(library|scene):.+/)
 
-const HexColor = z.string().regex(/^#[0-9a-f]{6}$/i)
-
-export const FacadeAppearanceSchema = z.object({
-  finish: z.enum(FACADE_FINISHES),
-  wall: HexColor,
-  trim: HexColor,
+/** What the unit paints on the walls and openings it fills; an absent entry keeps theirs. */
+export const FacadePaintSchema = z.object({
+  /** The filled face of the wall. */
+  wall: MaterialRef.optional(),
+  /** Window and door frames, and door leaves. */
+  frame: MaterialRef.optional(),
 })
-export type FacadeAppearance = z.infer<typeof FacadeAppearanceSchema>
+export type FacadePaint = z.infer<typeof FacadePaintSchema>
 
 export const FacadeBayOpeningSchema = z.object({
   kind: z.enum(['window', 'door']).default('window'),
@@ -81,15 +73,17 @@ export const FacadeBayBalconySchema = z.object({
    * first repeat to the last.
    */
   span: z.enum(['bay', 'continuous']).default('bay'),
+  deckMaterial: MaterialRef.optional(),
+  /** Posts and rails; a glass railing keeps its glass. */
+  railingMaterial: MaterialRef.optional(),
   /** Shift from the bay centre. */
   offsetX: z.number().finite().default(0),
 })
 export type FacadeBayBalcony = z.infer<typeof FacadeBayBalconySchema>
 
-/** Cladding panels a bay lays out around its opening: a finish and how they sit on the face. */
+/** Cladding panels a bay lays out around its opening: their paint and how they sit on the face. */
 export const FacadeCladdingSchema = z.object({
-  finish: z.enum(FACADE_FINISHES),
-  color: HexColor,
+  material: MaterialRef,
   /** Panel depth. */
   thickness: z.number().finite().min(0.005).max(0.5).default(0.03),
   /** Gap between the wall face and the panel; positive stands it proud. */
@@ -145,8 +139,7 @@ export const FacadeUnitSchema = z
     name: z.string().min(1),
     /** In precedence order: a later bay yields to the space an earlier one took. */
     bays: z.array(FacadeBaySchema).default([]),
-    /** Absent leaves the walls' own finishes in place. */
-    appearance: FacadeAppearanceSchema.optional(),
+    paint: FacadePaintSchema.default({}),
   })
   .refine((unit) => new Set(unit.bays.map((m) => m.key)).size === unit.bays.length, {
     message: 'Each bay in a unit needs its own key.',
@@ -180,9 +173,7 @@ export type FacadeOpeningPlacement = FacadeUnitObstacle & {
 export type FacadeBalconyPlacement = {
   left: number
   right: number
-  depth: number
-  railing: FacadeBayBalcony['railing']
-}
+} & Pick<FacadeBayBalcony, 'depth' | 'railing' | 'deckMaterial' | 'railingMaterial'>
 export type FacadeBayPlacement = {
   /** `<bay key>:<repeat index>`, stable while the bay keeps its place in the rhythm. */
   key: string
@@ -315,8 +306,7 @@ export function resolveFacadeUnit(
       const balcony = {
         left: Math.max(stretch.left, here[0]!.left),
         right: Math.min(stretch.right, here.at(-1)!.right),
-        depth: bay.balcony.depth,
-        railing: bay.balcony.railing,
+        ...balconyLook(bay.balcony),
       }
       if (balcony.right - balcony.left < MIN_BALCONY_WIDTH || balconyCollides(balcony)) {
         skipped++
@@ -433,8 +423,15 @@ function balconyIn(
   const left = Math.max(bounds.left, centre - width / 2)
   const right = Math.min(bounds.right, centre + width / 2)
   if (right - left < MIN_BALCONY_WIDTH) return undefined
-  return { left, right, depth: balcony.depth, railing: balcony.railing }
+  return { left, right, ...balconyLook(balcony) }
 }
+
+const balconyLook = ({ depth, railing, deckMaterial, railingMaterial }: FacadeBayBalcony) => ({
+  depth,
+  railing,
+  deckMaterial,
+  railingMaterial,
+})
 
 export type FacadeCladdingPart =
   | 'infill'

@@ -2,25 +2,19 @@ import {
   type DoorNode,
   type FacadeUnit,
   type FenceNode,
-  generateSceneMaterialId,
   LevelNode,
-  SceneMaterial,
-  type SceneMaterialId,
   type SlabNode,
   WallNode,
+  useScene,
   type WindowNode,
 } from '@pascal-app/core'
-import {
-  type FacadeFillPlan,
-  facadeCladdingKey,
-  facadeFinishMaterial,
-  planFacadeFill,
-} from '@pascal-app/core/building'
+import { type FacadeFillPlan, planFacadeFill } from '@pascal-app/core/building'
 import {
   buildDoorPreviewMesh,
   buildPanelGeometry,
   buildWindowPreviewMesh,
   createMaterial,
+  resolveMaterialRef,
 } from '@pascal-app/viewer'
 import {
   BoxGeometry,
@@ -117,20 +111,9 @@ export function buildFacadeBayScene(
     backSide: 'interior',
   })
 
-  // Preview-only scene materials, so panels resolve their claddings as they will in a project.
-  const materials: Record<SceneMaterialId, SceneMaterial> = {}
-  const cladding: Record<string, string> = {}
-  for (const bay of unit.bays)
-    for (const finish of [bay.infill, bay.spandrel]) {
-      if (!finish || cladding[facadeCladdingKey(finish)]) continue
-      const id = generateSceneMaterialId()
-      materials[id] = SceneMaterial.parse({
-        id,
-        name: facadeCladdingKey(finish),
-        material: facadeFinishMaterial(finish.finish, finish.color),
-      })
-      cladding[facadeCladdingKey(finish)] = `scene:${id}`
-    }
+  // `scene:` paint resolves against the open project, as it will once applied.
+  const materials = useScene.getState().materials
+  const paint = (ref: string | undefined) => resolveMaterialRef(ref, materials)
 
   let plan: FacadeFillPlan | null = null
   try {
@@ -138,7 +121,6 @@ export function buildFacadeBayScene(
       walls: [wall],
       nodes: { [level.id]: level, [wall.id]: wall },
       unit,
-      refs: { cladding },
     })
   } catch {
     // The elevation shows the resolver's message; the 3D view shows the bare wall.
@@ -152,11 +134,7 @@ export function buildFacadeBayScene(
   if (faces.length) {
     const wallMesh = new Mesh(
       mergeGeometries(faces),
-      createMaterial(
-        unit.appearance
-          ? facadeFinishMaterial(unit.appearance.finish, unit.appearance.wall)
-          : undefined,
-      ),
+      paint(unit.paint.wall) ?? createMaterial(),
     )
     for (const face of faces) face.dispose()
     wallMesh.castShadow = true
@@ -193,8 +171,8 @@ export function buildFacadeBayScene(
   const deck = new MeshStandardMaterial({ color: '#a4a8ab', roughness: 0.85 })
   owned.push(metal, glass, deck)
   for (const part of wallPlan?.balconies.values ?? []) {
-    if (part.type === 'slab') group.add(balconyDeck(part, deck))
-    else group.add(balconyRailing(part, metal, glass))
+    if (part.type === 'slab') group.add(balconyDeck(part, paint(part.slots?.surface) ?? deck))
+    else group.add(balconyRailing(part, paint(part.slots?.posts) ?? metal, glass))
   }
 
   const ground = new Mesh(

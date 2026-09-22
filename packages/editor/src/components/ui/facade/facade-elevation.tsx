@@ -8,8 +8,9 @@ import {
   type FacadeUnitResolution,
   resolveFacadeUnit,
 } from '@pascal-app/core'
-import { useMemo, useRef } from 'react'
+import { useId, useMemo, useRef } from 'react'
 import { cn } from '../../../lib/utils'
+import { materialSwatch } from './facade-material-field'
 
 const RAILING_HEIGHT = 1.1
 const SLAB_THICKNESS = 0.18
@@ -58,8 +59,9 @@ export function FacadeElevation({
   const below = compact ? 0.4 : 1.3
   // SVG y grows downwards; facade y grows up from the floor.
   const y = (up: number) => height - up
-  const wallColor = unit.appearance?.wall
-  const trimColor = unit.appearance?.trim ?? '#d4d4d8'
+  const trimColor = materialSwatch(unit.paint.frame)?.color ?? '#d4d4d8'
+  const paint = usePaintFills(unit)
+  const wallFill = paint.fill(unit.paint.wall)
   const selected = resolution.placements.filter((p) => p.bay === selectedBay)
 
   const toRun = (clientX: number) => {
@@ -81,13 +83,14 @@ export function FacadeElevation({
         role="img"
         aria-label={`${unit.name}, ${metres(width)} run`}
       >
+        {paint.defs}
         <rect
           x={0}
           y={0}
           width={width}
           height={height}
-          className={cn('stroke-border', !wallColor && 'fill-neutral-600/60')}
-          style={wallColor ? { fill: wallColor, fillOpacity: 0.55 } : undefined}
+          className={cn('stroke-border', !wallFill && 'fill-neutral-600/60')}
+          style={wallFill ? { fill: wallFill, fillOpacity: 0.7 } : undefined}
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
         />
@@ -135,6 +138,7 @@ export function FacadeElevation({
             runHeight={height}
             y={y}
             trim={trimColor}
+            fill={paint.fill}
             selected={placement.bay === selectedBay}
           />
         ))}
@@ -203,6 +207,7 @@ function Placement({
   runHeight,
   y,
   trim,
+  fill,
   selected,
 }: {
   placement: FacadeBayPlacement
@@ -210,6 +215,7 @@ function Placement({
   runHeight: number
   y: (up: number) => number
   trim: string
+  fill: (ref: string | undefined) => string | undefined
   selected: boolean
 }) {
   const { opening, balcony } = placement
@@ -223,7 +229,7 @@ function Placement({
             y={y(rect.top)}
             width={rect.right - rect.left}
             height={rect.top - rect.bottom}
-            fill={rect.cladding.color}
+            fill={fill(rect.cladding.material)}
             className="stroke-black/30"
             strokeWidth={0.5}
             vectorEffect="non-scaling-stroke"
@@ -237,7 +243,7 @@ function Placement({
             width={opening.right - opening.left}
             height={opening.top - opening.bottom}
             fill="#9cc3d8"
-            fillOpacity={0.55}
+            fillOpacity={0.9}
             stroke={trim}
             strokeWidth={2}
             vectorEffect="non-scaling-stroke"
@@ -259,6 +265,46 @@ function Placement({
       {balcony && <Balcony left={balcony.left} right={balcony.right} railing={balcony.railing} y={y} />}
     </g>
   )
+}
+
+/**
+ * Every paint the unit uses, as SVG fills: the catalog thumbnail tiled at a
+ * metre, over its swatch colour. Ids are per instance; the card and the
+ * studio draw the same unit at once.
+ */
+function usePaintFills(unit: FacadeUnit) {
+  // `useId` returns characters a `url(#…)` reference would need escaped.
+  const prefix = useId().replace(/[^\w-]/g, '')
+  return useMemo(() => {
+    const refs = [
+      ...new Set(
+        [unit.paint.wall, ...unit.bays.flatMap((bay) => [bay.infill?.material, bay.spandrel?.material])].filter(
+          (ref): ref is string => !!ref,
+        ),
+      ),
+    ]
+    const fills = new Map<string, string>()
+    const patterns = refs.flatMap((ref, index) => {
+      const swatch = materialSwatch(ref)
+      if (!swatch) return []
+      if (!swatch.image) {
+        fills.set(ref, swatch.color)
+        return []
+      }
+      const id = `${prefix}paint-${index}`
+      fills.set(ref, `url(#${id})`)
+      return [
+        <pattern key={id} id={id} patternUnits="userSpaceOnUse" width={1} height={1}>
+          <rect width={1} height={1} fill={swatch.color} />
+          <image href={swatch.image} width={1} height={1} preserveAspectRatio="xMidYMid slice" />
+        </pattern>,
+      ]
+    })
+    return {
+      defs: patterns.length ? <defs>{patterns}</defs> : null,
+      fill: (ref: string | undefined) => (ref ? fills.get(ref) : undefined),
+    }
+  }, [unit, prefix])
 }
 
 /** Mullions and transoms of a window, or the meeting line of a two-leaf door, in run metres. */

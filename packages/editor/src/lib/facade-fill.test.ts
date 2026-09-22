@@ -28,7 +28,7 @@ const WALL_ID = 'wall_facade' as WallNode['id']
 const unit = DEFAULT_FACADE_UNIT
 const brick = FacadeUnitSchema.parse({
   ...DEFAULT_FACADE_UNIT,
-  appearance: { finish: 'brick', wall: '#815449', trim: '#2b2b2b' },
+  paint: { wall: 'library:flooring-rusticbrick', frame: 'library:preset-charcoal' },
 })
 
 const nodes = () => useScene.getState().nodes
@@ -83,14 +83,12 @@ describe('applyFacade', () => {
     expect(wall().metadata.proceduralFacade).toBeUndefined()
   })
 
-  test('a finish becomes one shared scene material, reused on refill', () => {
-    applyFacade([WALL_ID], brick)
-    const materialCount = Object.keys(useScene.getState().materials).length
+  test('the unit paints with library references, adding no scene material', () => {
     applyFacade([WALL_ID], brick)
 
-    expect(materialCount).toBe(2)
-    expect(Object.keys(useScene.getState().materials)).toHaveLength(materialCount)
-    expect(wall().slots?.exterior).toStartWith('scene:')
+    expect(Object.keys(useScene.getState().materials)).toHaveLength(0)
+    expect(wall().slots?.exterior).toBe('library:flooring-rusticbrick')
+    expect(facadeWindows()[0]!.slots?.frame).toBe('library:preset-charcoal')
   })
 
   test('removal deletes the openings and restores the finish it replaced', () => {

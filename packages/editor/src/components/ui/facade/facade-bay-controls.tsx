@@ -1,11 +1,9 @@
 'use client'
 import {
-  FACADE_FINISHES,
   type FacadeBay,
   type FacadeBayBalcony,
   type FacadeBayOpening,
   type FacadeCladding,
-  type FacadeFinish,
   type FacadeUnitHorizontalAnchor,
   type FacadeUnitVerticalAnchor,
 } from '@pascal-app/core'
@@ -16,6 +14,7 @@ import { SegmentedControl } from '../controls/segmented-control'
 import { SliderControl } from '../controls/slider-control'
 import { ToggleControl } from '../controls/toggle-control'
 import { Button } from '../primitives/button'
+import { MaterialField } from './facade-material-field'
 
 /** The studio owns history for the whole draft, so sliders stay out of scene undo. */
 function MetreSlider({
@@ -145,17 +144,7 @@ const MIN_SIDE_ROOM = 0.05
 /** Room left each side when turning infill on for a bay its opening fills. */
 const DEFAULT_SIDE_ROOM = 0.4
 
-export const FINISH_LABELS: Record<FacadeFinish, string> = {
-  brick: 'Brick',
-  stone: 'Stone',
-  plaster: 'Plaster',
-  siding: 'Siding',
-  timber: 'Timber',
-  glass: 'Glass',
-  metal: 'Metal',
-}
-
-/** Finish, colour and how the panels sit on the face. */
+/** Paint and how the panels sit on the face. */
 function CladdingControls<T extends FacadeCladding>({
   value,
   onChange,
@@ -165,28 +154,11 @@ function CladdingControls<T extends FacadeCladding>({
 }) {
   return (
     <>
-      <div className="flex items-center gap-2">
-        <span className="w-16 shrink-0 text-xs text-muted-foreground">Material</span>
-        <select
-          aria-label="Panel material"
-          value={value.finish}
-          onChange={(event) => onChange({ ...value, finish: event.target.value as FacadeFinish })}
-          className="h-8 min-w-0 flex-1 rounded-md border border-border/50 bg-background px-2 text-xs text-foreground"
-        >
-          {FACADE_FINISHES.map((finish) => (
-            <option key={finish} value={finish}>
-              {FINISH_LABELS[finish]}
-            </option>
-          ))}
-        </select>
-        <input
-          type="color"
-          aria-label="Panel colour"
-          value={value.color}
-          onChange={(event) => onChange({ ...value, color: event.target.value })}
-          className="h-8 w-10 cursor-pointer rounded-md border border-border/50 bg-transparent"
-        />
-      </div>
+      <MaterialField
+        label="Material"
+        value={value.material}
+        onChange={(material) => onChange({ ...value, material })}
+      />
       <MetreSlider
         label="Depth"
         value={value.thickness}
@@ -466,7 +438,7 @@ export function FacadeBayControls({
           onChange={(on) =>
             set({
               infill: on
-                ? { finish: 'siding', color: '#2b2d2f', thickness: 0.03, standoff: 0, sides: 'both' }
+                ? { material: 'library:preset-charcoal', thickness: 0.03, standoff: 0, sides: 'both' }
                 : undefined,
               // An opening as wide as its bay leaves no side to clad: make room.
               ...(on && sideRoom < MIN_SIDE_ROOM && opening?.widthMode === 'fixed' && bay.widthMode !== 'stretch'
@@ -528,7 +500,7 @@ export function FacadeBayControls({
             onChange={(on) =>
               set({
                 spandrel: on
-                  ? { finish: 'brick', color: '#5a4136', thickness: 0.03, standoff: 0, parts: 'both' }
+                  ? { material: 'library:flooring-rusticbrick', thickness: 0.03, standoff: 0, parts: 'both' }
                   : undefined,
               })
             }
@@ -591,6 +563,20 @@ export function FacadeBayControls({
                 ]}
               />
             </Row>
+            <MaterialField
+              label="Deck"
+              value={balcony.deckMaterial}
+              emptyLabel="Default"
+              onChange={(deckMaterial) => setBalcony({ deckMaterial })}
+              onClear={() => setBalcony({ deckMaterial: undefined })}
+            />
+            <MaterialField
+              label={balcony.railing === 'glass' ? 'Frame' : 'Railing'}
+              value={balcony.railingMaterial}
+              emptyLabel="Default"
+              onChange={(railingMaterial) => setBalcony({ railingMaterial })}
+              onClear={() => setBalcony({ railingMaterial: undefined })}
+            />
           </>
         )}
       </PanelSection>

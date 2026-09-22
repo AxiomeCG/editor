@@ -143,6 +143,7 @@ export {
   DEFAULT_WALL_MATERIAL,
   DEFAULT_WINDOW_MATERIAL,
   disposeMaterial,
+  getMaterialTextureVersion,
   glassMaterial,
   MONO_PALETTE,
   PRESET_PALETTES,

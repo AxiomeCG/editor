@@ -1,7 +1,8 @@
 'use client'
 import type { FacadeUnit } from '@pascal-app/core'
 import { OrbitControls } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
+import { getMaterialTextureVersion } from '@pascal-app/viewer'
 import { useEffect, useMemo } from 'react'
 import { WebGPURenderer } from 'three/webgpu'
 import { cn } from '../../../lib/utils'
@@ -11,6 +12,22 @@ function FacadeBayContent({ unit, width, height }: { unit: FacadeUnit; width: nu
   const scene = useMemo(() => buildFacadeBayScene(unit, width, height), [unit, width, height])
   useEffect(() => scene.dispose, [scene])
   return <primitive object={scene.group} />
+}
+
+/** Paint textures load after the first frame; the demand loop redraws once they land. */
+function TextureRefresh() {
+  const invalidate = useThree((state) => state.invalidate)
+  useEffect(() => {
+    let seen = getMaterialTextureVersion()
+    const timer = setInterval(() => {
+      const version = getMaterialTextureVersion()
+      if (version === seen) return
+      seen = version
+      invalidate()
+    }, 250)
+    return () => clearInterval(timer)
+  }, [invalidate])
+  return null
 }
 
 /**
@@ -56,6 +73,7 @@ export function FacadeBay3D({
           shadow-camera-far={60}
         />
         <FacadeBayContent unit={unit} width={width} height={height} />
+        <TextureRefresh />
         <OrbitControls
           makeDefault
           target={[width / 2, height / 2, 0]}

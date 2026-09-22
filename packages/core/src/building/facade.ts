@@ -4,7 +4,6 @@ import {
   DoorNode,
   type FenceNode,
   FRENCH_DOOR_SEGMENTS,
-  MaterialSchema,
   PanelNode,
   type SlabNode,
   type WallNode,
@@ -19,7 +18,6 @@ import {
 import {
   bayCladdingRects,
   type FacadeCladding,
-  type FacadeFinish,
   type FacadeOpeningPlacement,
   type FacadeUnit,
   type FacadeUnitObstacle,
@@ -44,15 +42,6 @@ export const MAX_FACADE_OPENINGS = 400
 const HOST_TOLERANCE = 1e-6
 
 export type FacadeOpeningNode = WindowNode | DoorNode
-export type FacadeMaterialRefs = {
-  finish?: string
-  frame?: string
-  /** Scene material per cladding, keyed by `facadeCladdingKey`. */
-  cladding?: Record<string, string>
-}
-/** Claddings that look the same share one material. */
-export const facadeCladdingKey = (cladding: Pick<FacadeCladding, 'finish' | 'color'>) =>
-  `${cladding.finish}|${cladding.color}`
 export type FacadeWallPlan = {
   wall: WallNode
   openings: RepetitionPlan<FacadeOpeningNode>
@@ -140,35 +129,6 @@ export function facadeLayoutFrame(
   return frameOf(wall, facadeRuns(nodes, chain ?? []), nodes, facade.unit)
 }
 
-const FINISH_PATTERNS: Partial<Record<FacadeFinish, string>> = {
-  brick:
-    '<path d="M0 0H480M0 180H480M0 360H480M0 0V180M240 0V180M120 180V360M360 180V360" stroke="#aaa" stroke-width="7"/>',
-  siding: '<path d="M0 90H480M0 180H480M0 270H480" stroke="#bbb" stroke-width="5"/>',
-  stone: '<path d="M0 180H480M240 0V180M120 180V360" stroke="#ccc" stroke-width="4"/>',
-  timber:
-    '<path d="M80 0V360M160 0V360M240 0V360M320 0V360M400 0V360" stroke="#bcbcbc" stroke-width="5"/>',
-}
-
-/** A metre-scaled finish; glazing is always a native window, never painted. */
-export function facadeFinishMaterial(finish: FacadeFinish, color: string): MaterialSchema {
-  const pattern = FINISH_PATTERNS[finish]
-  const reflective = finish === 'metal' || finish === 'glass'
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360" viewBox="0 0 480 360"><path fill="#fff" d="M0 0H480V360H0Z"/>${pattern ?? ''}</svg>`
-  return MaterialSchema.parse({
-    preset: 'custom',
-    properties: { color, roughness: reflective ? 0.35 : 0.88, metalness: reflective ? 0.65 : 0 },
-    ...(pattern
-      ? {
-          texture: {
-            url: `data:image/svg+xml,${encodeURIComponent(svg)}`,
-            // The pattern tile is 0.48 × 0.36 m.
-            repeat: [1 / 0.48, 1 / 0.36],
-          },
-        }
-      : {}),
-  })
-}
-
 /** The wall slots a finish paints: the whole face plus its four band slots. */
 export function facadeSurfaceSlots(surface: FacadeSurface): string[] {
   const sides = surface === 'both' ? (['interior', 'exterior'] as const) : [surface]
@@ -194,7 +154,13 @@ function buildOpening(
     position: [desired.x, opening.y, 0] as [number, number, number],
     width: opening.right - opening.left,
     height: opening.top - opening.bottom,
-    slots: { ...old?.slots, ...(frameRef ? { frame: frameRef } : {}) },
+    slots: {
+      ...old?.slots,
+      // A door's leaf is joinery too: a French door's stiles are its `panel` slot.
+      ...(frameRef
+        ? { frame: frameRef, ...(opening.kind === 'door' ? { panel: frameRef } : {}) }
+        : {}),
+    },
     metadata: { ...old?.metadata, facadeOwner: wall.id, facadeCell: desired.cell },
   }
   const { style } = opening
@@ -240,7 +206,6 @@ function buildPanel(
   side: 'front' | 'back',
   desired: DesiredPanel,
   old: PanelNode | undefined,
-  ref: string | undefined,
 ): PanelNode {
   return PanelNode.parse({
     name: desired.infill ? 'Facade infill' : 'Facade spandrel',
@@ -253,7 +218,7 @@ function buildPanel(
     height: desired.top - desired.bottom,
     thickness: desired.cladding.thickness,
     offset: desired.cladding.standoff,
-    slots: { ...old?.slots, ...(ref ? { surface: ref } : {}) },
+    slots: { ...old?.slots, surface: desired.cladding.material },
     metadata: { ...old?.metadata, facadeOwner: wall.id, facadeCell: desired.cell },
   })
 }
@@ -274,14 +239,12 @@ export function planFacadeFill({
   nodes,
   unit: input,
   targets = {},
-  refs = {},
   sourceItemId,
 }: {
   walls: readonly WallNode[]
   nodes: Record<string, AnyNode>
   unit: FacadeUnit
   targets?: Record<string, FacadeWallTarget>
-  refs?: FacadeMaterialRefs
   sourceItemId?: string
 }): FacadeFillPlan {
   if (!walls.length) throw Error('Select a wall before applying a facade.')
@@ -430,7 +393,7 @@ export function planFacadeFill({
       desired: desiredOpenings.get(wall.id) ?? [],
       previous: indexRepetitions(owned, (node) => String(node.metadata.facadeCell)),
       keyOf: (desired) => desired.cell,
-      build: (desired, old) => buildOpening(wall, desired, old, refs.frame),
+      build: (desired, old) => buildOpening(wall, desired, old, unit.paint.frame),
     })
     const ownedPanels = children(wall).filter(
       (node): node is PanelNode => node.type === 'panel' && node.metadata.facadeOwner === wall.id,
@@ -439,8 +402,7 @@ export function planFacadeFill({
       desired: desiredPanels.get(wall.id) ?? [],
       previous: indexRepetitions(ownedPanels, (node) => String(node.metadata.facadeCell)),
       keyOf: (desired) => desired.cell,
-      build: (desired, old) =>
-        buildPanel(wall, face, desired, old, refs.cladding?.[facadeCladdingKey(desired.cladding)]),
+      build: (desired, old) => buildPanel(wall, face, desired, old),
     })
     const balconies = reconcileRepetitions({
       desired: desiredBalconies.get(wall.id) ?? [],
@@ -452,11 +414,12 @@ export function planFacadeFill({
     const slots = { ...wall.slots }
     const previousSlots = { ...stored?.previousSlots }
     const appliedSlots = { ...stored?.appliedSlots }
-    if (refs.finish)
+    const paint = unit.paint.wall
+    if (paint)
       for (const slot of facadeSurfaceSlots(surface)) {
         if (!Object.hasOwn(previousSlots, slot)) previousSlots[slot] = slots[slot] ?? null
-        slots[slot] = refs.finish
-        appliedSlots[slot] = refs.finish
+        slots[slot] = paint
+        appliedSlots[slot] = paint
       }
     const config: WallFacade = {
       unit,

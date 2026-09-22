@@ -11,7 +11,7 @@ import {
 } from '../schema'
 import { readWallFacade, type WallFacade } from '../systems/facade/facade-config'
 import { DEFAULT_FACADE_UNIT, FacadeUnitSchema } from '../systems/facade/facade-unit'
-import { type FacadeFillPlan, facadeCladdingKey, facadeLayoutFrame, planFacadeFill } from './facade'
+import { type FacadeFillPlan, facadeLayoutFrame, planFacadeFill } from './facade'
 import { facadeScopeTargets } from './facade-scope'
 
 const level = LevelNode.parse({ level: 0, height: 3 })
@@ -146,13 +146,12 @@ describe('planFacadeFill', () => {
     expect(plan.walls[0]!.openings.added.map((node) => node.type)).toEqual(['door'])
   })
 
-  test('a finish paints only the filled face and remembers what it replaced', () => {
+  test('the unit paints only the filled face and remembers what it replaced', () => {
     const wall = straightWall(8, { slots: { exterior: 'library:old-render' } })
     const plan = planFacadeFill({
       walls: [wall],
       nodes: scene(wall),
-      unit: DEFAULT_FACADE_UNIT,
-      refs: { finish: 'scene:brick', frame: 'scene:frame' },
+      unit: { ...DEFAULT_FACADE_UNIT, paint: { wall: 'scene:brick', frame: 'scene:frame' } },
     })
     const update = plan.walls[0]!.wallUpdate!
     const config = update.metadata.proceduralFacade as WallFacade
@@ -172,6 +171,7 @@ describe('planFacadeFill', () => {
       nodes: scene(wall),
       unit: FacadeUnitSchema.parse({
         name: 'Door bays',
+        paint: { frame: 'library:preset-charcoal' },
         bays: [
           {
             key: 'bay',
@@ -179,7 +179,12 @@ describe('planFacadeFill', () => {
             pier: 0.6,
             endPier: 0.3,
             opening: { kind: 'door', width: 1.2, height: 2.2 },
-            balcony: { depth: 1.2, railing: 'glass' },
+            balcony: {
+              depth: 1.2,
+              railing: 'glass',
+              deckMaterial: 'library:concrete-raw',
+              railingMaterial: 'library:metal-steel',
+            },
           },
         ],
       }),
@@ -189,6 +194,11 @@ describe('planFacadeFill', () => {
     const guards = parts.filter((node): node is FenceNode => node.type === 'fence')
 
     expect(windowsOf(plan).map((node) => node.type)).toEqual(['door', 'door', 'door'])
+    for (const door of windowsOf(plan))
+      expect(door.slots).toMatchObject({
+        frame: 'library:preset-charcoal',
+        panel: 'library:preset-charcoal',
+      })
     expect(decks).toHaveLength(3)
     expect(guards).toHaveLength(9)
     for (const deck of decks) {
@@ -196,8 +206,16 @@ describe('planFacadeFill', () => {
       expect((deck.metadata.balcony as { id: string }).id).toBe(deck.id)
       // The deck projects out of the exterior (back, -z) face.
       expect(Math.max(...deck.polygon.map((p) => p[1]))).toBeLessThan(0)
+      expect(deck.slots?.surface).toBe('library:concrete-raw')
     }
-    for (const guard of guards) expect(decks.map((deck) => deck.id)).toContain(guard.supportSlabId)
+    for (const guard of guards) {
+      expect(decks.map((deck) => deck.id)).toContain(guard.supportSlabId)
+      expect(guard.slots).toMatchObject({
+        posts: 'library:metal-steel',
+        rail: 'library:metal-steel',
+        infill: 'library:preset-glass',
+      })
+    }
   })
 
   test('refuses curved walls with a sentence the panel can show', () => {
@@ -282,8 +300,8 @@ describe('bay cladding', () => {
         endPier: 0.3,
         widthMode: 'repeat',
         opening: { width: 1.4, height: 1.6, sill: 0.9 },
-        infill: { finish: 'siding', color: '#2b2d2f' },
-        spandrel: { finish: 'brick', color: '#5a4136', thickness: 0.05 },
+        infill: { material: 'library:preset-charcoal' },
+        spandrel: { material: 'library:flooring-rusticbrick', thickness: 0.05 },
       },
     ],
   })
@@ -316,19 +334,9 @@ describe('bay cladding', () => {
     }
   })
 
-  test('each cladding gets its own material, shared by every panel that looks the same', () => {
+  test('each panel is painted with its cladding material', () => {
     const wall = straightWall(10)
-    const plan = planFacadeFill({
-      walls: [wall],
-      nodes: scene(wall),
-      unit: victorBay,
-      refs: {
-        cladding: {
-          [facadeCladdingKey({ finish: 'siding', color: '#2b2d2f' })]: 'scene:siding',
-          [facadeCladdingKey({ finish: 'brick', color: '#5a4136' })]: 'scene:brick',
-        },
-      },
-    })
+    const plan = planFacadeFill({ walls: [wall], nodes: scene(wall), unit: victorBay })
     const refs = new Set(
       panelsOf(plan).map(
         (p) => `${String(p.metadata.facadeCell).split(':').at(-1)}=${p.slots?.surface}`,
@@ -336,10 +344,10 @@ describe('bay cladding', () => {
     )
     expect(refs).toEqual(
       new Set([
-        'infill-left=scene:siding',
-        'infill-right=scene:siding',
-        'spandrel-below=scene:brick',
-        'spandrel-above=scene:brick',
+        'infill-left=library:preset-charcoal',
+        'infill-right=library:preset-charcoal',
+        'spandrel-below=library:flooring-rusticbrick',
+        'spandrel-above=library:flooring-rusticbrick',
       ]),
     )
   })
@@ -353,7 +361,7 @@ describe('bay cladding', () => {
           key: 'blank',
           width: 1,
           widthMode: 'stretch',
-          infill: { finish: 'timber', color: '#8a6a4a' },
+          infill: { material: 'library:wood-woodplank48' },
         },
       ],
     })
@@ -372,7 +380,7 @@ describe('bay cladding', () => {
           key: 'band',
           width: 1,
           widthMode: 'stretch',
-          infill: { finish: 'stone', color: '#c2b69f' },
+          infill: { material: 'library:flooring-wallstone1' },
         },
       ],
     })

@@ -56,6 +56,7 @@ export function facadeBalconyNodes({
     polygon: clockwise ? [...corners].reverse() : corners,
     elevation: getWallBaseElevationForNodes(host, nodes),
     thickness: options.thickness,
+    slots: { ...old?.slots, ...(balcony.deckMaterial ? { surface: balcony.deckMaterial } : {}) },
     metadata: { ...old?.metadata, facadeOwner: host.id, facadeCell: slabCell },
   })
   slab.metadata = {
@@ -79,6 +80,12 @@ export function facadeBalconyNodes({
       supportSlabId: slab.id,
       height: options.railingHeight,
       style: balcony.railing,
+      slots: {
+        ...oldRail?.slots,
+        ...(balcony.railingMaterial
+          ? { posts: balcony.railingMaterial, rail: balcony.railingMaterial }
+          : {}),
+      },
       metadata: {
         ...oldRail?.metadata,
         facadeOwner: host.id,
