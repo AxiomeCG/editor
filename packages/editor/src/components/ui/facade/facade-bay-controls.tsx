@@ -1,8 +1,8 @@
 'use client'
 import type {
-  FacadeModule,
-  FacadeModuleBalcony,
-  FacadeModuleOpening,
+  FacadeBay,
+  FacadeBayBalcony,
+  FacadeBayOpening,
   FacadeUnitHorizontalAnchor,
   FacadeUnitVerticalAnchor,
 } from '@pascal-app/core'
@@ -49,7 +49,7 @@ function MetreSlider({
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center pier-2">
       <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -80,7 +80,7 @@ function AnchorGlyph({ axis, value }: { axis: 'horizontal' | 'vertical'; value: 
 const horizontalOptions = (['left', 'center', 'right'] as FacadeUnitHorizontalAnchor[]).map((value) => ({
   value,
   label: (
-    <span className="flex items-center gap-1.5" title={`Pinned to the ${value === 'center' ? 'centre' : `${value} corner`}`}>
+    <span className="flex items-center pier-1.5" title={`Pinned to the ${value === 'center' ? 'centre' : `${value} corner`}`}>
       <AnchorGlyph axis="horizontal" value={value} />
       {value === 'center' ? 'Centre' : value === 'left' ? 'Left' : 'Right'}
     </span>
@@ -89,16 +89,16 @@ const horizontalOptions = (['left', 'center', 'right'] as FacadeUnitHorizontalAn
 const verticalOptions = (['bottom', 'center', 'top'] as FacadeUnitVerticalAnchor[]).map((value) => ({
   value,
   label: (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center pier-1.5">
       <AnchorGlyph axis="vertical" value={value} />
       {value === 'center' ? 'Middle' : value === 'bottom' ? 'Floor' : 'Top'}
     </span>
   ),
 }))
 
-export const newOpening = (module: FacadeModule): FacadeModuleOpening => ({
+export const newOpening = (bay: FacadeBay): FacadeBayOpening => ({
   kind: 'window',
-  width: Math.min(1.2, module.width),
+  width: Math.min(1.2, bay.width),
   height: 1.5,
   sill: 0.9,
   vertical: 'bottom',
@@ -107,42 +107,42 @@ export const newOpening = (module: FacadeModule): FacadeModuleOpening => ({
   offsetX: 0,
   offsetY: 0,
 })
-const newBalcony = (): FacadeModuleBalcony => ({ depth: 1.4, railing: 'slat', offsetX: 0 })
+const newBalcony = (): FacadeBayBalcony => ({ depth: 1.4, railing: 'slat', offsetX: 0 })
 
-/** Constraints of one module: how it sits between the corners, and what it holds. */
-export function FacadeModuleControls({
-  module,
+/** Constraints of one bay: how it sits between the corners, and what it holds. */
+export function FacadeBayControls({
+  bay,
   onChange,
   onMove,
   onRemove,
   canMoveUp,
   canMoveDown,
 }: {
-  module: FacadeModule
-  onChange: (module: FacadeModule) => void
+  bay: FacadeBay
+  onChange: (bay: FacadeBay) => void
   onMove: (direction: -1 | 1) => void
   onRemove: () => void
   canMoveUp: boolean
   canMoveDown: boolean
 }) {
-  const set = (patch: Partial<FacadeModule>) => onChange({ ...module, ...patch })
-  const { opening, balcony } = module
-  const setOpening = (patch: Partial<FacadeModuleOpening>) => set({ opening: { ...opening!, ...patch } })
-  const setBalcony = (patch: Partial<FacadeModuleBalcony>) => set({ balcony: { ...balcony!, ...patch } })
+  const set = (patch: Partial<FacadeBay>) => onChange({ ...bay, ...patch })
+  const { opening, balcony } = bay
+  const setOpening = (patch: Partial<FacadeBayOpening>) => set({ opening: { ...opening!, ...patch } })
+  const setBalcony = (patch: Partial<FacadeBayBalcony>) => set({ balcony: { ...balcony!, ...patch } })
   const offsetLabel =
-    module.widthMode === 'stretch'
+    bay.widthMode === 'stretch'
       ? 'Inset'
-      : module.horizontal === 'center'
+      : bay.horizontal === 'center'
         ? 'Shift'
-        : `From ${module.horizontal} corner`
+        : `From ${bay.horizontal} corner`
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-1 px-3 py-2">
+      <div className="flex items-center pier-1 px-3 py-2">
         <input
-          aria-label="Module name"
-          value={module.name ?? ''}
-          placeholder={module.key}
+          aria-label="Bay name"
+          value={bay.name ?? ''}
+          placeholder={bay.key}
           onChange={(event) => set({ name: event.target.value || undefined })}
           className="h-8 min-w-0 flex-1 rounded-md border border-border/50 bg-transparent px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         />
@@ -164,15 +164,15 @@ export function FacadeModuleControls({
         >
           <ArrowDown className="size-4" />
         </Button>
-        <Button size="icon-sm" variant="ghost" aria-label="Delete module" onClick={onRemove}>
+        <Button size="icon-sm" variant="ghost" aria-label="Delete bay" onClick={onRemove}>
           <Trash2 className="size-4" />
         </Button>
       </div>
 
-      <PanelSection title="Between the corners">
+      <PanelSection title="Rhythm">
         <Row label="Size">
           <SegmentedControl
-            value={module.widthMode}
+            value={bay.widthMode}
             onChange={(widthMode) => set({ widthMode })}
             options={[
               { value: 'repeat', label: 'Repeat' },
@@ -181,33 +181,33 @@ export function FacadeModuleControls({
             ]}
           />
         </Row>
-        {module.widthMode !== 'stretch' && (
+        {bay.widthMode !== 'stretch' && (
           <Row label="Pinned to">
             <SegmentedControl
-              value={module.horizontal}
+              value={bay.horizontal}
               onChange={(horizontal) => set({ horizontal })}
               options={horizontalOptions}
             />
           </Row>
         )}
-        {module.widthMode !== 'stretch' && (
-          <MetreSlider label="Module width" value={module.width} min={0.3} max={12} onChange={(width) => set({ width })} />
+        {bay.widthMode !== 'stretch' && (
+          <MetreSlider label="Bay width" value={bay.width} min={0.3} max={12} onChange={(width) => set({ width })} />
         )}
-        {module.widthMode !== 'repeat' && (
-          <MetreSlider label={offsetLabel} value={module.offsetX} min={-10} max={10} onChange={(offsetX) => set({ offsetX })} />
+        {bay.widthMode !== 'repeat' && (
+          <MetreSlider label={offsetLabel} value={bay.offsetX} min={-10} max={10} onChange={(offsetX) => set({ offsetX })} />
         )}
-        {module.widthMode === 'repeat' && (
+        {bay.widthMode === 'repeat' && (
           <>
-            <MetreSlider label="Gap" value={module.gap} max={10} onChange={(gap) => set({ gap })} />
-            <MetreSlider label="Clear of corners" value={module.margin} max={5} onChange={(margin) => set({ margin })} />
+            <MetreSlider label="Pier width" value={bay.pier} max={10} onChange={(pier) => set({ pier })} />
+            <MetreSlider label="End piers" value={bay.endPier} max={5} onChange={(endPier) => set({ endPier })} />
             <Row label="Leftover">
               <SegmentedControl
-                value={module.remainder}
+                value={bay.remainder}
                 onChange={(remainder) => set({ remainder })}
                 options={[
                   { value: 'center', label: 'Centre' },
-                  { value: 'gap-stretch', label: 'Widen gaps' },
-                  { value: 'edge-align', label: 'To anchor' },
+                  { value: 'widen-piers', label: 'Widen piers' },
+                  { value: 'align-to-anchor', label: 'To anchor' },
                 ]}
               />
             </Row>
@@ -217,9 +217,9 @@ export function FacadeModuleControls({
 
       <PanelSection title="Opening">
         <ToggleControl
-          label="This module has an opening"
+          label="This bay has an opening"
           checked={!!opening}
-          onChange={(on) => set({ opening: on ? newOpening(module) : undefined })}
+          onChange={(on) => set({ opening: on ? newOpening(bay) : undefined })}
         />
         {opening && (
           <>
@@ -245,7 +245,7 @@ export function FacadeModuleControls({
                 onChange={(widthMode) => setOpening({ widthMode, offsetX: 0 })}
                 options={[
                   { value: 'fixed', label: 'Fixed' },
-                  { value: 'stretch', label: 'Fill module' },
+                  { value: 'stretch', label: 'Fill bay' },
                 ]}
               />
             </Row>
@@ -300,7 +300,7 @@ export function FacadeModuleControls({
 
       <PanelSection title="Balcony">
         <ToggleControl
-          label="This module has a balcony"
+          label="This bay has a balcony"
           checked={!!balcony}
           onChange={(on) => set({ balcony: on ? newBalcony() : undefined })}
         />
@@ -308,9 +308,9 @@ export function FacadeModuleControls({
           <>
             <MetreSlider label="Projection" value={balcony.depth} min={0.5} max={3} onChange={(depth) => setBalcony({ depth })} />
             <ToggleControl
-              label="As wide as the module"
+              label="As wide as the bay"
               checked={balcony.width === undefined}
-              onChange={(full) => setBalcony({ width: full ? undefined : Math.max(0.6, module.width) })}
+              onChange={(full) => setBalcony({ width: full ? undefined : Math.max(0.6, bay.width) })}
             />
             {balcony.width !== undefined && (
               <MetreSlider label="Width" value={balcony.width} min={0.6} max={12} onChange={(width) => setBalcony({ width })} />

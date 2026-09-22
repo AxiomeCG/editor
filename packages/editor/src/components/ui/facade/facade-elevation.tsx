@@ -1,6 +1,6 @@
 'use client'
 import {
-  type FacadeModulePlacement,
+  type FacadeBayPlacement,
   type FacadeUnit,
   type FacadeUnitResolution,
   resolveFacadeUnit,
@@ -28,14 +28,14 @@ const metres = (value: number) => `${value.toFixed(2)} m`
 
 /**
  * One run seen head-on, drawn from exactly what the resolver places. Corners
- * are the run's two ends; the selected module's distances to them are dimensioned.
+ * are the run's two ends; the selected bay's distances to them are dimensioned.
  */
 export function FacadeElevation({
   unit,
   width,
   height,
-  selectedModule = null,
-  onSelectModule,
+  selectedBay = null,
+  onSelectBay,
   onResize,
   compact = false,
   className,
@@ -43,8 +43,8 @@ export function FacadeElevation({
   unit: FacadeUnit
   width: number
   height: number
-  selectedModule?: string | null
-  onSelectModule?: (key: string) => void
+  selectedBay?: string | null
+  onSelectBay?: (key: string) => void
   onResize?: (width: number) => void
   compact?: boolean
   className?: string
@@ -57,7 +57,7 @@ export function FacadeElevation({
   const y = (up: number) => height - up
   const wallColor = unit.appearance?.wall
   const trimColor = unit.appearance?.trim ?? '#d4d4d8'
-  const selected = resolution.placements.filter((p) => p.module === selectedModule)
+  const selected = resolution.placements.filter((p) => p.bay === selectedBay)
 
   const toRun = (clientX: number) => {
     const element = svg.current
@@ -130,11 +130,11 @@ export function FacadeElevation({
             placement={placement}
             y={y}
             trim={trimColor}
-            selected={placement.module === selectedModule}
+            selected={placement.bay === selectedBay}
           />
         ))}
 
-        {onSelectModule &&
+        {onSelectBay &&
           resolution.placements.map((placement) => (
             <rect
               key={`hit:${placement.key}`}
@@ -144,9 +144,9 @@ export function FacadeElevation({
               height={height + SLAB_THICKNESS + 0.1}
               fill="transparent"
               className="cursor-pointer"
-              onClick={() => onSelectModule(placement.module)}
+              onClick={() => onSelectBay(placement.bay)}
             >
-              <title>{unit.modules.find((m) => m.key === placement.module)?.name ?? placement.module}</title>
+              <title>{unit.bays.find((m) => m.key === placement.bay)?.name ?? placement.bay}</title>
             </rect>
           ))}
 
@@ -185,7 +185,7 @@ export function FacadeElevation({
           className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm"
         >
           {resolution.error ??
-            `${resolution.skipped} ${resolution.skipped === 1 ? 'placement' : 'placements'} skipped: they would overlap an earlier module.`}
+            `${resolution.skipped} ${resolution.skipped === 1 ? 'placement' : 'placements'} skipped: they would overlap an earlier bay.`}
         </p>
       )}
     </div>
@@ -198,7 +198,7 @@ function Placement({
   trim,
   selected,
 }: {
-  placement: FacadeModulePlacement
+  placement: FacadeBayPlacement
   y: (up: number) => number
   trim: string
   selected: boolean

@@ -57,7 +57,7 @@ describe('planFacadeFill', () => {
     const plan = planFacadeFill({ walls: [wall], nodes: scene(wall), unit: DEFAULT_FACADE_UNIT })
     const windows = windowsOf(plan) as WindowNode[]
 
-    // 7.6 m between margins fits three 1.4 m windows at a 1 m gap, centred.
+    // 7.6 m between margins fits three 1.4 m windows at a 1 m pier, centred.
     expect(windows.map((w) => w.position[0])).toEqual(
       [1.6, 4, 6.4].map((x) => expect.closeTo(x, 6)),
     )
@@ -128,9 +128,7 @@ describe('planFacadeFill', () => {
     const unitOf = (kind: 'window' | 'door') =>
       FacadeUnitSchema.parse({
         name: 'Single',
-        modules: [
-          { key: 'a', width: 1, widthMode: 'fixed', opening: { kind, width: 1, height: 2 } },
-        ],
+        bays: [{ key: 'a', width: 1, widthMode: 'fixed', opening: { kind, width: 1, height: 2 } }],
       })
     const nodes = commit(
       scene(wall),
@@ -172,12 +170,12 @@ describe('planFacadeFill', () => {
       nodes: scene(wall),
       unit: FacadeUnitSchema.parse({
         name: 'Door bays',
-        modules: [
+        bays: [
           {
             key: 'bay',
             width: 2.4,
-            gap: 0.6,
-            margin: 0.3,
+            pier: 0.6,
+            endPier: 0.3,
             opening: { kind: 'door', width: 1.2, height: 2.2 },
             balcony: { depth: 1.2, railing: 'glass' },
           },

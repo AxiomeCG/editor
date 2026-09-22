@@ -2,7 +2,7 @@
 import {
   FACADE_FINISHES,
   type FacadeFinish,
-  type FacadeModule,
+  type FacadeBay,
   type FacadeUnit,
   FacadeUnitSchema,
 } from '@pascal-app/core'
@@ -15,7 +15,7 @@ import { SliderControl } from '../controls/slider-control'
 import { ToggleControl } from '../controls/toggle-control'
 import { Button } from '../primitives/button'
 import { FacadeElevation } from './facade-elevation'
-import { FacadeModuleControls, newOpening } from './facade-module-controls'
+import { FacadeBayControls, newOpening } from './facade-bay-controls'
 
 const FINISH_LABELS: Record<FacadeFinish, string> = {
   brick: 'Brick',
@@ -28,37 +28,37 @@ const FINISH_LABELS: Record<FacadeFinish, string> = {
 }
 const DEFAULT_APPEARANCE = { finish: 'plaster', wall: '#cfc5b7', trim: '#2f3133' } as const
 
-function describe(module: FacadeModule) {
+function describe(bay: FacadeBay) {
   const size =
-    module.widthMode === 'stretch'
+    bay.widthMode === 'stretch'
       ? 'Stretches'
-      : module.widthMode === 'fixed'
-        ? `Fixed · ${module.horizontal === 'center' ? 'centre' : module.horizontal}`
+      : bay.widthMode === 'fixed'
+        ? `Fixed · ${bay.horizontal === 'center' ? 'centre' : bay.horizontal}`
         : 'Repeats'
   const parts = [
-    module.opening?.kind === 'door' ? 'door' : module.opening ? 'window' : null,
-    module.balcony ? 'balcony' : null,
+    bay.opening?.kind === 'door' ? 'door' : bay.opening ? 'window' : null,
+    bay.balcony ? 'balcony' : null,
   ].filter(Boolean)
-  return `${size} · ${parts.length ? parts.join(' + ') : 'spacer'}`
+  return `${size} · ${parts.length ? parts.join(' + ') : 'blank'}`
 }
 
-function nextKey(modules: readonly FacadeModule[]) {
-  const taken = new Set(modules.map((m) => m.key))
-  let index = modules.length + 1
-  while (taken.has(`module-${index}`)) index++
-  return `module-${index}`
+function nextKey(bays: readonly FacadeBay[]) {
+  const taken = new Set(bays.map((m) => m.key))
+  let index = bays.length + 1
+  while (taken.has(`bay-${index}`)) index++
+  return `bay-${index}`
 }
 
 /**
  * The isolated surface where one facade unit is designed: a single run drawn
- * head-on at a test width, and the constraints tying each module to its corners.
+ * head-on at a test width, and the constraints tying each bay to its corners.
  */
 export function FacadeStudio() {
   const draft = useFacadeTool((s) => s.draft)
-  const selectedModule = useFacadeTool((s) => s.selectedModule)
+  const selectedBay = useFacadeTool((s) => s.selectedBay)
   const testWidth = useFacadeTool((s) => s.testWidth)
   const testHeight = useFacadeTool((s) => s.testHeight)
-  const { setDraft, selectModule, setTestSize, closeStudio } = useFacadeTool.getState()
+  const { setDraft, selectBay, setTestSize, closeStudio } = useFacadeTool.getState()
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -74,26 +74,26 @@ export function FacadeStudio() {
     setError('')
     setDraft({ ...draft, ...patch })
   }
-  const modules = draft.modules
-  const index = modules.findIndex((m) => m.key === selectedModule)
-  const module = index >= 0 ? modules[index] : undefined
-  const replace = (next: FacadeModule) =>
-    update({ modules: modules.map((m) => (m.key === next.key ? next : m)) })
+  const bays = draft.bays
+  const index = bays.findIndex((m) => m.key === selectedBay)
+  const bay = index >= 0 ? bays[index] : undefined
+  const replace = (next: FacadeBay) =>
+    update({ bays: bays.map((m) => (m.key === next.key ? next : m)) })
 
-  const addModule = () => {
-    const base: FacadeModule = {
-      key: nextKey(modules),
+  const addBay = () => {
+    const base: FacadeBay = {
+      key: nextKey(bays),
       width: 1.4,
       horizontal: 'center',
       widthMode: 'repeat',
       offsetX: 0,
-      margin: 0.4,
-      gap: 1,
+      endPier: 0.4,
+      pier: 1,
       remainder: 'center',
     }
     const added = { ...base, opening: newOpening(base) }
-    update({ modules: [...modules, added] })
-    selectModule(added.key)
+    update({ bays: [...bays, added] })
+    selectBay(added.key)
   }
   const done = () => {
     const parsed = FacadeUnitSchema.safeParse(draft)
@@ -108,12 +108,12 @@ export function FacadeStudio() {
   return (
     <div className="absolute inset-0 flex bg-background text-foreground" aria-label="Facade studio">
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-3 border-border/50 border-b px-4 py-2">
+        <div className="flex items-center pier-3 border-border/50 border-b px-4 py-2">
           <span className="text-sm font-medium">Facade studio</span>
           <span className="text-xs text-muted-foreground">
             One run, corner to corner. Drag the right corner to test other lengths.
           </span>
-          <div className="ml-auto flex w-[420px] gap-2">
+          <div className="ml-auto flex w-[420px] pier-2">
             <SliderControl
               label="Test run"
               value={testWidth}
@@ -147,14 +147,14 @@ export function FacadeStudio() {
           unit={draft}
           width={testWidth}
           height={testHeight}
-          selectedModule={selectedModule}
-          onSelectModule={selectModule}
+          selectedBay={selectedBay}
+          onSelectBay={selectBay}
           onResize={(width) => setTestSize({ width })}
         />
       </div>
 
       <aside className="flex w-[360px] shrink-0 flex-col border-border/50 border-l">
-        <div className="flex items-center gap-2 px-3 py-3">
+        <div className="flex items-center pier-2 px-3 py-3">
           <input
             aria-label="Unit name"
             value={draft.name}
@@ -175,7 +175,7 @@ export function FacadeStudio() {
             />
             {draft.appearance && (
               <>
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <label className="flex items-center pier-2 text-xs text-muted-foreground">
                   <span className="w-16 shrink-0">Material</span>
                   <select
                     aria-label="Facade finish"
@@ -195,7 +195,7 @@ export function FacadeStudio() {
                   </select>
                 </label>
                 {(['wall', 'trim'] as const).map((key) => (
-                  <label key={key} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <label key={key} className="flex items-center pier-2 text-xs text-muted-foreground">
                     <span className="w-16 shrink-0">{key === 'wall' ? 'Wall' : 'Frames'}</span>
                     <input
                       type="color"
@@ -213,20 +213,20 @@ export function FacadeStudio() {
             )}
           </PanelSection>
 
-          <PanelSection title="Modules">
+          <PanelSection title="Bays">
             <p className="text-[11px] leading-4 text-muted-foreground">
-              Earlier modules take their space first; a later one yields where they would overlap.
+              Earlier bays take their space first; a later one yields where they would overlap.
             </p>
-            <ul className="flex flex-col gap-1">
-              {modules.map((m) => (
+            <ul className="flex flex-col pier-1">
+              {bays.map((m) => (
                 <li key={m.key}>
                   <button
                     type="button"
-                    onClick={() => selectModule(m.key)}
-                    aria-pressed={m.key === selectedModule}
+                    onClick={() => selectBay(m.key)}
+                    aria-pressed={m.key === selectedBay}
                     className={cn(
                       'flex w-full flex-col items-start rounded-md border px-2.5 py-1.5 text-left',
-                      m.key === selectedModule
+                      m.key === selectedBay
                         ? 'border-primary/60 bg-primary/10'
                         : 'border-border/50 hover:bg-accent/40',
                     )}
@@ -237,39 +237,39 @@ export function FacadeStudio() {
                 </li>
               ))}
             </ul>
-            <Button size="sm" variant="outline" className="text-xs" onClick={addModule}>
-              <Plus className="size-3.5" /> Add module
+            <Button size="sm" variant="outline" className="text-xs" onClick={addBay}>
+              <Plus className="size-3.5" /> Add bay
             </Button>
           </PanelSection>
 
-          {module && (
-            <FacadeModuleControls
-              key={module.key}
-              module={module}
+          {bay && (
+            <FacadeBayControls
+              key={bay.key}
+              bay={bay}
               onChange={replace}
               canMoveUp={index > 0}
-              canMoveDown={index < modules.length - 1}
+              canMoveDown={index < bays.length - 1}
               onMove={(direction) => {
-                const next = [...modules]
+                const next = [...bays]
                 const [moved] = next.splice(index, 1)
                 next.splice(index + direction, 0, moved!)
-                update({ modules: next })
+                update({ bays: next })
               }}
               onRemove={() => {
-                update({ modules: modules.filter((m) => m.key !== module.key) })
-                selectModule(modules[index + 1]?.key ?? modules[index - 1]?.key ?? null)
+                update({ bays: bays.filter((m) => m.key !== bay.key) })
+                selectBay(bays[index + 1]?.key ?? bays[index - 1]?.key ?? null)
               }}
             />
           )}
         </div>
 
-        <div className="flex flex-col gap-2 border-border/50 border-t p-3">
+        <div className="flex flex-col pier-2 border-border/50 border-t p-3">
           {error && (
             <p role="alert" className="text-xs text-destructive">
               {error}
             </p>
           )}
-          <div className="flex gap-2">
+          <div className="flex pier-2">
             <Button variant="ghost" className="flex-1 text-xs" onClick={() => closeStudio(false)}>
               Cancel
             </Button>
