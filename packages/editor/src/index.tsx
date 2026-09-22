@@ -252,6 +252,8 @@ export { SliderControl } from './components/ui/controls/slider-control'
 export { TerrainSculptPanel } from './components/ui/controls/terrain-sculpt-panel'
 export { ToggleControl } from './components/ui/controls/toggle-control'
 export { ToolOptionsPanel } from './components/ui/controls/tool-options-panel'
+export { FacadeElevation } from './components/ui/facade/facade-elevation'
+export { FacadeTool } from './components/ui/facade/facade-tool'
 export { FloatingLevelSelector } from './components/ui/floating-level-selector'
 export { CATALOG_ITEMS } from './components/ui/item-catalog/catalog-items'
 // Item collections UI — used by the kind-owned ItemPanel in nodes/.
@@ -667,6 +669,7 @@ export {
   isGridSnapActive,
   isMagneticSnapActive,
 } from './store/use-editor'
+export { useFacadeTool } from './store/use-facade-tool'
 export { default as useFacingPose, type FacingPose } from './store/use-facing-pose'
 export { default as useFenceCurveDraft } from './store/use-fence-curve-draft'
 export { type FirstPersonHudState, useFirstPersonHud } from './store/use-first-person-hud'

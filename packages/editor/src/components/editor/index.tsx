@@ -53,6 +53,7 @@ import { disposeSFXBus, initSFXBus } from '../../lib/sfx-bus'
 import { useUnitFocusRules } from '../../lib/units'
 import { type CameraHintAction, useCameraHintFocus } from '../../store/use-camera-hint-focus'
 import useEditor from '../../store/use-editor'
+import { useFacadeTool } from '../../store/use-facade-tool'
 import useFloorplanMode from '../../store/use-floorplan-mode'
 import useSessionGroups from '../../store/use-session-groups'
 import { StandaloneBalconyPreview2D } from '../editor-2d/balcony-preview'
@@ -68,6 +69,7 @@ import { ToolManager } from '../tools/tool-manager'
 import { ActionMenu } from '../ui/action-menu'
 import { CommandPalette, type CommandPaletteEmptyAction } from '../ui/command-palette'
 import { EditorCommands } from '../ui/command-palette/editor-commands'
+import { FacadeStudio } from '../ui/facade/facade-studio'
 import { FloatingLevelSelector } from '../ui/floating-level-selector'
 import { HelperManager } from '../ui/helpers/helper-manager'
 import { PanelManager } from '../ui/panels/panel-manager'
@@ -1290,6 +1292,11 @@ function EditorContent({
 }: EditorProps) {
   const isFirstPersonMode = useEditor((s) => s.isFirstPersonMode)
   const isStudioMode = useEditor((s) => s.workspaceMode === 'studio')
+  const facadeStudioOpen = useFacadeTool((s) => s.draft !== null)
+  // The host's own stage (item builder, gallery) wins; otherwise the facade studio takes the stage.
+  const activeStageOverlay = stageOverlay ?? (facadeStudioOpen ? <FacadeStudio /> : undefined)
+  // Like the host's item builder, the studio owns the stage: the viewer's chrome would paint over it.
+  const facadeStudioOnStage = facadeStudioOpen && !stageOverlay
   const presentationProjectId = projectId ?? null
   const presentationPersistenceRef = useRef<LocalProjectPresentationPersistence | null>(null)
   const [restoredPresentationProjectId, setRestoredPresentationProjectId] = useState<
@@ -1637,13 +1644,23 @@ function EditorContent({
               navbarSlot={navbarSlot}
               overlays={
                 <>
-                  {!(isCaptureMode || stageOverlay) && <FloatingLevelSelector />}
-                  {!(isVersionPreviewMode || isCaptureMode || isStudioMode) && (
+                  {!(isCaptureMode || activeStageOverlay) && <FloatingLevelSelector />}
+                  {!(
+                    isVersionPreviewMode ||
+                    isCaptureMode ||
+                    isStudioMode ||
+                    facadeStudioOnStage
+                  ) && (
                     <div className="pointer-events-auto">
                       <ActionMenu />
                     </div>
                   )}
-                  {!(isVersionPreviewMode || isCaptureMode || isStudioMode) && (
+                  {!(
+                    isVersionPreviewMode ||
+                    isCaptureMode ||
+                    isStudioMode ||
+                    facadeStudioOnStage
+                  ) && (
                     <div className="pointer-events-auto">
                       <PanelManager
                         inspectorFooter={inspectorFooter}
@@ -1651,7 +1668,7 @@ function EditorContent({
                       />
                     </div>
                   )}
-                  {!isCaptureMode && (
+                  {!(isCaptureMode || facadeStudioOnStage) && (
                     <div className="pointer-events-auto">
                       <HelperManager />
                     </div>
@@ -1671,10 +1688,10 @@ function EditorContent({
               renderTabContent={renderTabContent}
               sidebarOverlay={sidebarOverlay}
               sidebarTabs={tabBarTabs}
-              stageOverlay={stageOverlay}
+              stageOverlay={activeStageOverlay}
               viewerContent={viewerCanvas}
-              viewerToolbarLeft={viewerToolbarLeft}
-              viewerToolbarRight={viewerToolbarRight}
+              viewerToolbarLeft={facadeStudioOnStage ? undefined : viewerToolbarLeft}
+              viewerToolbarRight={facadeStudioOnStage ? undefined : viewerToolbarRight}
             />
             <EditorCommands />
             <CommandPalette emptyAction={commandPaletteEmptyAction} />
@@ -1726,24 +1743,33 @@ function EditorContent({
           </SidebarSlot>
 
           {/* Viewer area */}
-          <div className="relative flex-1 overflow-hidden rounded-xl">{viewerCanvas}</div>
+          <div className="relative flex-1 overflow-hidden rounded-xl">
+            {viewerCanvas}
+            {facadeStudioOpen && (
+              <div className="absolute inset-0 z-10">
+                <FacadeStudio />
+              </div>
+            )}
+          </div>
 
           {/* Fixed UI overlays scoped to the viewer area */}
-          <ViewerOverlays left={overlayLeft}>
-            <div className="pointer-events-auto">
-              <ActionMenu />
-            </div>
-            <div className="pointer-events-auto">
-              <PanelManager />
-            </div>
-            <div className="pointer-events-auto">
-              <HelperManager />
-            </div>
-            <RiserDiagramPanel />
-            {isFirstPersonMode && (
-              <FirstPersonOverlay onExit={() => useEditor.getState().setFirstPersonMode(false)} />
-            )}
-          </ViewerOverlays>
+          {!facadeStudioOpen && (
+            <ViewerOverlays left={overlayLeft}>
+              <div className="pointer-events-auto">
+                <ActionMenu />
+              </div>
+              <div className="pointer-events-auto">
+                <PanelManager />
+              </div>
+              <div className="pointer-events-auto">
+                <HelperManager />
+              </div>
+              <RiserDiagramPanel />
+              {isFirstPersonMode && (
+                <FirstPersonOverlay onExit={() => useEditor.getState().setFirstPersonMode(false)} />
+              )}
+            </ViewerOverlays>
+          )}
         </>
       )}
     </div>
