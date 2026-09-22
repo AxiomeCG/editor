@@ -397,6 +397,26 @@ export {
   resolveElevatorServiceLevels,
 } from './systems/elevator/elevator-service'
 export {
+  DEFAULT_FACADE_UNIT,
+  FACADE_UNIT_CLEARANCE,
+  FACADE_UNIT_MAX_REPEAT,
+  FACADE_UNIT_MIN_OPENING,
+  type FacadeUnit,
+  type FacadeUnitBay,
+  type FacadeUnitHeightMode,
+  type FacadeUnitHorizontalAnchor,
+  type FacadeUnitObstacle,
+  type FacadeUnitOpening,
+  type FacadeUnitPlacement,
+  type FacadeUnitRemainder,
+  type FacadeUnitResolution,
+  type FacadeUnitResolutionOptions,
+  FacadeUnitSchema,
+  type FacadeUnitVerticalAnchor,
+  type FacadeUnitWidthMode,
+  resolveFacadeUnit,
+} from './systems/facade/facade-unit'
+export {
   getFenceCenterlineFrameAt,
   getFenceCenterlineLength,
   sampleFenceCenterline,
@@ -454,6 +474,7 @@ export {
   getWallPlanFootprint,
   getWallThickness,
 } from './systems/wall/wall-footprint'
+export { resolveWallLoop, type WallLoopScope } from './systems/wall/wall-loop'
 export { planWallMerge } from './systems/wall/wall-merge'
 export {
   calculateLevelMiters,
@@ -491,29 +512,18 @@ export {
   planWallInsertion,
   planWallSplitAtPoint,
 } from './systems/wall/wall-topology'
-export {
-  DEFAULT_FACADE_UNIT,
-  FACADE_UNIT_CLEARANCE,
-  FACADE_UNIT_MAX_REPEAT,
-  FACADE_UNIT_MIN_OPENING,
-  FacadeUnitSchema,
-  resolveFacadeUnit,
-  type FacadeUnit,
-  type FacadeUnitBay,
-  type FacadeUnitHeightMode,
-  type FacadeUnitHorizontalAnchor,
-  type FacadeUnitObstacle,
-  type FacadeUnitOpening,
-  type FacadeUnitPlacement,
-  type FacadeUnitRemainder,
-  type FacadeUnitResolution,
-  type FacadeUnitResolutionOptions,
-  type FacadeUnitVerticalAnchor,
-  type FacadeUnitWidthMode,
-} from './systems/facade/facade-unit'
-export { resolveWallLoop, type WallLoopScope } from './systems/wall/wall-loop'
 export type { SceneGraph } from './utils/clone-scene-graph'
 export { cloneLevelSubtree, cloneSceneGraph, forkSceneGraph } from './utils/clone-scene-graph'
+export {
+  indexRepetitions,
+  linearArray,
+  type RepeatOffset,
+  type RepeatPlacement,
+  type RepetitionPlan,
+  reconcileRepetitions,
+  remapRepeatedReferences,
+} from './utils/repetition'
+export { applyNodeRepetition, releaseNodeRepetition } from './utils/repetition-nodes'
 export { isObject } from './utils/types'
 export {
   type BuildStats,
