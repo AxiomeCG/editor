@@ -10,6 +10,7 @@ import {
 } from '@pascal-app/core'
 import { useId, useMemo, useRef } from 'react'
 import { cn } from '../../../lib/utils'
+import { bayColor } from './facade-bay-colors'
 import { materialSwatch } from './facade-material-field'
 import { type FacadeScenario, PARTITION_MARGIN, PARTITION_THICKNESS, scenarioRuns } from '@pascal-app/core/building'
 
@@ -31,6 +32,8 @@ export function resolveElevation(
 }
 
 const metres = (value: number) => `${value.toFixed(2)} m`
+
+const BAND = { top: 0.05, height: 0.22 }
 
 const shift = (placement: FacadeBayPlacement, by: number, run: number): FacadeBayPlacement => ({
   ...placement,
@@ -164,19 +167,27 @@ export function FacadeElevation({
           />
         ))}
 
-        {selected.map((placement) => (
-          <rect
-            key={`span:${placement.key}`}
-            x={placement.left}
-            y={0}
-            width={placement.right - placement.left}
-            height={height}
-            className="fill-primary/10 stroke-primary"
-            strokeDasharray="4 3"
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
+        {/* Every bay's extent: outlined in its colour, filled when selected. Gaps are piers. */}
+        {resolution.placements.map((placement) => {
+          const color = bayColor(unit, placement.bay)
+          const isSelected = placement.bay === selectedBay
+          return (
+            <rect
+              key={`span:${placement.key}`}
+              x={placement.left}
+              y={0}
+              width={placement.right - placement.left}
+              height={height}
+              fill={color}
+              fillOpacity={isSelected ? 0.14 : 0}
+              stroke={color}
+              strokeOpacity={isSelected ? 1 : 0.55}
+              strokeDasharray="4 3"
+              strokeWidth={isSelected ? 1.5 : 1}
+              vectorEffect="non-scaling-stroke"
+            />
+          )
+        })}
 
         {resolution.placements.map((placement) => (
           <Placement
@@ -191,6 +202,36 @@ export function FacadeElevation({
           />
         ))}
 
+        {resolution.placements.map((placement) => {
+          const width = placement.right - placement.left
+          const bay = unit.bays.find((b) => b.key === placement.bay)
+          const isSelected = placement.bay === selectedBay
+          return (
+            <g key={`band:${placement.key}`}>
+              <rect
+                x={placement.left}
+                y={height + BAND.top}
+                width={width}
+                height={compact ? BAND.height / 2 : BAND.height}
+                rx={0.04}
+                fill={bayColor(unit, placement.bay)}
+                fillOpacity={selectedBay === null || isSelected ? 0.9 : 0.45}
+              />
+              {!compact && width > 0.5 && (
+                <text
+                  x={placement.left + width / 2}
+                  y={height + BAND.top + BAND.height * 0.72}
+                  textAnchor="middle"
+                  fontSize={0.14}
+                  className="pointer-events-none fill-neutral-950 font-medium"
+                >
+                  {bay?.name ?? placement.bay}
+                </text>
+              )}
+            </g>
+          )
+        })}
+
         {onSelectBay &&
           resolution.placements.map((placement) => (
             <rect
@@ -198,7 +239,7 @@ export function FacadeElevation({
               x={placement.left}
               y={-0.1}
               width={placement.right - placement.left}
-              height={height + SLAB_THICKNESS + 0.1}
+              height={height + BAND.top + BAND.height + 0.1}
               fill="transparent"
               className="cursor-pointer"
               onClick={() => onSelectBay(placement.bay)}
@@ -237,15 +278,15 @@ export function FacadeElevation({
           <>
             {runs.length > 1
               ? runs.map((run) => (
-                  <Dimension key={run.start} from={run.start} to={run.end} at={height + 0.45} />
+                  <Dimension key={run.start} from={run.start} to={run.end} at={height + 0.6} />
                 ))
               : selected.length > 0 && (
                   <>
-                    <Dimension from={0} to={selected[0]!.left} at={height + 0.45} />
-                    <Dimension from={selected.at(-1)!.right} to={width} at={height + 0.45} />
+                    <Dimension from={0} to={selected[0]!.left} at={height + 0.6} />
+                    <Dimension from={selected.at(-1)!.right} to={width} at={height + 0.6} />
                   </>
                 )}
-            <Dimension from={0} to={width} at={height + 0.95} />
+            <Dimension from={0} to={width} at={height + 1.05} />
           </>
         )}
 

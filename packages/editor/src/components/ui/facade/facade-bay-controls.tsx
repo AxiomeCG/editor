@@ -9,12 +9,12 @@ import {
 } from '@pascal-app/core'
 import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { PanelSection } from '../controls/panel-section'
 import { SegmentedControl } from '../controls/segmented-control'
 import { SliderControl } from '../controls/slider-control'
 import { ToggleControl } from '../controls/toggle-control'
 import { Button } from '../primitives/button'
 import { MaterialField } from './facade-material-field'
+import { StudioSection } from './studio-section'
 
 /** The studio owns history for the whole draft, so sliders stay out of scene undo. */
 function MetreSlider({
@@ -186,7 +186,12 @@ export function FacadeBayControls({
   onRemove,
   canMoveUp,
   canMoveDown,
+  sectionIndex,
+  sectionCount,
 }: {
+  /** Where this bay's sections start among the panel's pinned sections, and how many there are. */
+  sectionIndex: number
+  sectionCount: number
   bay: FacadeBay
   onChange: (bay: FacadeBay) => void
   onMove: (direction: -1 | 1) => void
@@ -211,11 +216,12 @@ export function FacadeBayControls({
       ? 'Inset'
       : bay.horizontal === 'center'
         ? 'Shift'
-        : `From ${bay.horizontal} corner`
+        : 'Gap before'
 
+  // A fragment: the sections must be children of the panel's scroll container to stay pinned.
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-1 px-3 py-2">
+    <>
+      <div className="flex shrink-0 items-center gap-1 px-3 py-2">
         <input
           aria-label="Bay name"
           value={bay.name ?? ''}
@@ -246,7 +252,7 @@ export function FacadeBayControls({
         </Button>
       </div>
 
-      <PanelSection title="Rhythm">
+      <StudioSection title="Rhythm" index={sectionIndex + 0} count={sectionCount}>
         <Row label="Size">
           <SegmentedControl
             value={bay.widthMode}
@@ -290,9 +296,9 @@ export function FacadeBayControls({
             </Row>
           </>
         )}
-      </PanelSection>
+      </StudioSection>
 
-      <PanelSection title="Opening">
+      <StudioSection title="Opening" index={sectionIndex + 1} count={sectionCount}>
         <ToggleControl
           label="This bay has an opening"
           checked={!!opening}
@@ -424,9 +430,9 @@ export function FacadeBayControls({
             />
           </>
         )}
-      </PanelSection>
+      </StudioSection>
 
-      <PanelSection title="Infill">
+      <StudioSection title="Infill" index={sectionIndex + 2} count={sectionCount}>
         <p className="text-[11px] leading-4 text-muted-foreground">
           {opening
             ? 'The sides of the bay, beside the opening, floor to ceiling.'
@@ -438,7 +444,7 @@ export function FacadeBayControls({
           onChange={(on) =>
             set({
               infill: on
-                ? { material: 'library:preset-charcoal', thickness: 0.03, standoff: 0, sides: 'both' }
+                ? { material: 'library:preset-charcoal', thickness: 0.03, standoff: 0, sides: 'both', height: 'storey' }
                 : undefined,
               // An opening as wide as its bay leaves no side to clad: make room.
               ...(on && sideRoom < MIN_SIDE_ROOM && opening?.widthMode === 'fixed' && bay.widthMode !== 'stretch'
@@ -465,6 +471,16 @@ export function FacadeBayControls({
                 ]}
               />
             </Row>
+            <Row label="Height">
+              <SegmentedControl
+                value={bay.infill.height}
+                onChange={(height) => set({ infill: { ...bay.infill!, height } })}
+                options={[
+                  { value: 'storey', label: 'Storey' },
+                  { value: 'opening', label: 'Opening' },
+                ]}
+              />
+            </Row>
             <ToggleControl
               label="Fill to the edge of the bay"
               checked={bay.infill.width === undefined}
@@ -486,10 +502,10 @@ export function FacadeBayControls({
         {bay.infill && (
           <CladdingControls value={bay.infill} onChange={(infill) => set({ infill })} />
         )}
-      </PanelSection>
+      </StudioSection>
 
       {opening && (
-        <PanelSection title="Spandrel">
+        <StudioSection title="Spandrel" index={sectionIndex + 3} count={sectionCount}>
           <p className="text-[11px] leading-4 text-muted-foreground">
             Below and above the opening, across its width — the band between one floor's
             window and the next.
@@ -521,10 +537,10 @@ export function FacadeBayControls({
               <CladdingControls value={bay.spandrel} onChange={(spandrel) => set({ spandrel })} />
             </>
           )}
-        </PanelSection>
+        </StudioSection>
       )}
 
-      <PanelSection title="Balcony">
+      <StudioSection title="Balcony" index={sectionIndex + (opening ? 4 : 3)} count={sectionCount}>
         <ToggleControl
           label="This bay has a balcony"
           checked={!!balcony}
@@ -552,6 +568,12 @@ export function FacadeBayControls({
                 ]}
               />
             </Row>
+            {balcony.span === 'continuous' && (
+              <p className="text-[11px] leading-4 text-muted-foreground">
+                One balcony along this bay's repeats and any neighbouring bay whose balcony is
+                continuous too, such as a door bay beside window bays.
+              </p>
+            )}
             <Row label="Railing">
               <SegmentedControl
                 value={balcony.railing}
@@ -579,7 +601,7 @@ export function FacadeBayControls({
             />
           </>
         )}
-      </PanelSection>
-    </div>
+      </StudioSection>
+    </>
   )
 }

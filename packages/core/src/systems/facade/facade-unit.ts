@@ -96,6 +96,8 @@ export const FacadeInfillSchema = FacadeCladdingSchema.extend({
   sides: z.enum(['both', 'left', 'right']).default('both'),
   /** Width of each side panel from the opening; absent fills to the bay's edge. */
   width: z.number().finite().min(0.05).max(6).optional(),
+  /** Floor to ceiling, or only as tall as the opening beside it. */
+  height: z.enum(['storey', 'opening']).default('storey'),
 })
 export type FacadeInfill = z.infer<typeof FacadeInfillSchema>
 
@@ -231,12 +233,15 @@ export function resolveFacadeUnit(
     span: Span,
     bounds: { left: number; right: number },
     index: number,
-    ownBalcony = true,
   ): FacadeBayPlacement | null => {
     const { opening } = bay
     const placedOpening = opening && vertical ? openingIn(span, opening, vertical) : undefined
     if (opening && !placedOpening) return null
-    const balcony = bay.balcony && ownBalcony ? balconyIn(span, bay.balcony, bounds) : undefined
+    // A continuous balcony is laid once every bay has its place (below).
+    const balcony =
+      bay.balcony && bay.balcony.span !== 'continuous'
+        ? balconyIn(span, bay.balcony, bounds)
+        : undefined
     if (
       (placedOpening &&
         (overlaps(placedOpening, obstacles, clearance) ||
@@ -273,49 +278,71 @@ export function resolveFacadeUnit(
 
   // Pinned bays claim their span first, like fixed elements in a design tool;
   // repeating and stretching bays then fill the stretches left between them.
+  // Bays pinned to the same side stack like flex items: each one's offset is
+  // its gap from the previous bay pinned there, or from the corner if first.
   const whole = { left: 0, right: run.width }
   const taken: { left: number; right: number }[] = []
+  let leftEdge = 0
+  let rightEdge = run.width
   for (const bay of unit.bays.filter((b) => b.widthMode === 'fixed')) {
     const vertical = verticalOf(bay)
     // A bay whose opening cannot fit this storey contributes nothing.
     if (bay.opening && !vertical) continue
-    for (const [index, span] of resolveSpans(bay, run.width, maxRepeat).entries())
-      if (tryPlace(bay, vertical, span, whole, index))
-        taken.push({ left: span.left, right: span.left + span.width })
+    const span =
+      bay.horizontal === 'left'
+        ? { left: leftEdge + bay.offsetX, width: bay.width }
+        : bay.horizontal === 'right'
+          ? { left: rightEdge - bay.offsetX - bay.width, width: bay.width }
+          : resolveSpans(bay, run.width, maxRepeat)[0]
+    if (!span || span.left < -1e-9 || span.left + span.width > run.width + 1e-9) {
+      skipped++
+      continue
+    }
+    if (!tryPlace(bay, vertical, span, whole, 0)) continue
+    taken.push({ left: span.left, right: span.left + span.width })
+    if (bay.horizontal === 'left') leftEdge = span.left + span.width
+    if (bay.horizontal === 'right') rightEdge = span.left
   }
   const free = freeStretches(run.width, taken)
   for (const bay of unit.bays.filter((b) => b.widthMode !== 'fixed')) {
     const vertical = verticalOf(bay)
     if (bay.opening && !vertical) continue
     let index = 0
-    const continuous = bay.balcony?.span === 'continuous'
-    for (const stretch of free) {
-      const here = resolveSpans(bay, stretch.right - stretch.left, maxRepeat).flatMap((span) => {
-        const placed = tryPlace(
+    for (const stretch of free)
+      for (const span of resolveSpans(bay, stretch.right - stretch.left, maxRepeat))
+        tryPlace(
           bay,
           vertical,
           { left: span.left + stretch.left, width: span.width },
           stretch,
           index++,
-          !continuous,
         )
-        return placed ? [placed] : []
-      })
-      // A continuous balcony runs from the stretch's first repeat to its last.
-      if (!continuous || !bay.balcony || !here.length) continue
-      const balcony = {
-        left: Math.max(stretch.left, here[0]!.left),
-        right: Math.min(stretch.right, here.at(-1)!.right),
-        ...balconyLook(bay.balcony),
-      }
-      if (balcony.right - balcony.left < MIN_BALCONY_WIDTH || balconyCollides(balcony)) {
-        skipped++
-        continue
-      }
-      here[0]!.balcony = balcony
-      balconies.push(balcony)
-    }
   }
+
+  // A continuous balcony (a *balcon filant*) runs along neighbouring placements
+  // whose bays all want one — repeats of one bay, or a door bay and the window
+  // bays beside it. Any other placement in between ends it.
+  const bayOf = new Map(unit.bays.map((bay) => [bay.key, bay]))
+  const inOrder = [...placements].sort((a, b) => a.left - b.left)
+  let group: FacadeBayPlacement[] = []
+  const layGroup = () => {
+    const first = group[0]
+    const look = first && bayOf.get(first.bay)?.balcony
+    if (first && look) {
+      const balcony = { left: first.left, right: group.at(-1)!.right, ...balconyLook(look) }
+      if (balcony.right - balcony.left < MIN_BALCONY_WIDTH || balconyCollides(balcony)) skipped++
+      else {
+        first.balcony = balcony
+        balconies.push(balcony)
+      }
+    }
+    group = []
+  }
+  for (const placement of inOrder) {
+    if (bayOf.get(placement.bay)?.balcony?.span === 'continuous') group.push(placement)
+    else layGroup()
+  }
+  layGroup()
 
   return { placements, skipped }
 }
@@ -481,14 +508,16 @@ export function bayCladdingRects(
     if (!opening) add('infill', infill, placement.left, placement.right, 0, runHeight)
     else {
       const reach = infill.width ?? Number.POSITIVE_INFINITY
+      const [bottom, top] =
+        infill.height === 'opening' ? [opening.bottom, opening.top] : [0, runHeight]
       if (infill.sides !== 'right')
         add(
           'infill-left',
           infill,
           Math.max(placement.left, openingLeft - reach),
           openingLeft,
-          0,
-          runHeight,
+          bottom,
+          top,
         )
       if (infill.sides !== 'left')
         add(
@@ -496,8 +525,8 @@ export function bayCladdingRects(
           infill,
           openingRight,
           Math.min(placement.right, openingRight + reach),
-          0,
-          runHeight,
+          bottom,
+          top,
         )
     }
   }

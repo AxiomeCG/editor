@@ -2,6 +2,7 @@ import {
   type DoorNode,
   type FacadeUnit,
   type FenceNode,
+  resolveFacadeUnit,
   type SlabNode,
   useScene,
   type WindowNode,
@@ -22,6 +23,7 @@ import {
   Group,
   type Material,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   type Object3D,
   Shape,
@@ -29,6 +31,7 @@ import {
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { type FacadeScenario, STUDIO_WALL_THICKNESS, scenarioScene } from '@pascal-app/core/building'
+import { bayColor } from './facade-bay-colors'
 
 const RAIL = 0.04
 
@@ -169,6 +172,26 @@ export function buildFacadeBayScene(
     mesh.castShadow = true
     mesh.receiveShadow = true
     group.add(mesh)
+  }
+
+  // Each bay's extent as a strip on the ground in front of the facade, in the
+  // elevation's colours: the gaps between strips are the piers.
+  for (const run of plan?.runs ?? []) {
+    let placements: ReturnType<typeof resolveFacadeUnit>['placements'] = []
+    try {
+      placements = resolveFacadeUnit(unit, { width: run.end - run.start, height }).placements
+    } catch {}
+    for (const placement of placements) {
+      const strip = new MeshBasicMaterial({ color: bayColor(unit, placement.bay) })
+      owned.push(strip)
+      const mesh = new Mesh(new BoxGeometry(placement.right - placement.left, 0.01, 0.22), strip)
+      mesh.position.set(
+        run.start + (placement.left + placement.right) / 2,
+        -0.2,
+        STUDIO_WALL_THICKNESS / 2 + 0.45,
+      )
+      group.add(mesh)
+    }
   }
 
   const ground = new Mesh(

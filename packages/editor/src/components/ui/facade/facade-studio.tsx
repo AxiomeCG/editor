@@ -12,14 +12,15 @@ import {
   type FacadeStudioView,
   useFacadeTool,
 } from '../../../store/use-facade-tool'
-import { PanelSection } from '../controls/panel-section'
 import { SegmentedControl } from '../controls/segmented-control'
 import { SliderControl } from '../controls/slider-control'
 import { Button } from '../primitives/button'
 import { FacadeBay3D } from './facade-bay-3d'
+import { bayColor } from './facade-bay-colors'
 import { FacadeElevation, resolveElevation, resolveScenario } from './facade-elevation'
 import { FacadeBayControls, newOpening } from './facade-bay-controls'
 import { MaterialField } from './facade-material-field'
+import { StudioSection } from './studio-section'
 import { type FacadeScenario, nextPartition, SCENARIO_WIDTHS } from '@pascal-app/core/building'
 
 const NO_PARTITIONS: readonly number[] = []
@@ -96,6 +97,9 @@ export function FacadeStudio() {
     placed.set(placement.bay, (placed.get(placement.bay) ?? 0) + 1)
   const index = bays.findIndex((m) => m.key === selectedBay)
   const bay = index >= 0 ? bays[index] : undefined
+  // Paint and Bays, then the selected bay's Rhythm, Opening, Infill, Spandrel (with an
+  // opening only) and Balcony.
+  const sectionCount = 2 + (bay ? (bay.opening ? 5 : 4) : 0)
   const replace = (next: FacadeBay) =>
     update({ bays: bays.map((m) => (m.key === next.key ? next : m)) })
 
@@ -255,8 +259,8 @@ export function FacadeStudio() {
           </Button>
         </div>
 
-        <div className="subtle-scrollbar min-h-0 flex-1 overflow-y-auto">
-          <PanelSection title="Paint">
+        <div data-studio-sections className="subtle-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <StudioSection title="Paint" index={0} count={sectionCount}>
             <p className="text-[11px] leading-4 text-muted-foreground">
               From the paint library. Left as is, the walls and frames keep their own paint.
             </p>
@@ -272,12 +276,12 @@ export function FacadeStudio() {
               onChange={(frame) => update({ paint: { ...draft.paint, frame } })}
               onClear={() => update({ paint: { ...draft.paint, frame: undefined } })}
             />
-          </PanelSection>
+          </StudioSection>
 
-          <PanelSection title="Bays">
+          <StudioSection title="Bays" index={1} count={sectionCount}>
             <p className="text-[11px] leading-4 text-muted-foreground">
-              Pinned bays take their place first; repeating and stretching bays fill the space
-              left between them. Within each kind, the higher bay wins where two overlap.
+              Pinned bays take their place first, stacking from their corner in list order, each
+              after its gap; repeating and stretching bays fill the space left between them.
             </p>
             <ul className="flex flex-col gap-1">
               {bays.map((m) => (
@@ -293,7 +297,14 @@ export function FacadeStudio() {
                         : 'border-border/50 hover:bg-accent/40',
                     )}
                   >
-                    <span className="text-sm">{m.name ?? m.key}</span>
+                    <span className="flex items-center gap-2 text-sm">
+                      <span
+                        aria-hidden
+                        className="size-2.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: bayColor(draft, m.key) }}
+                      />
+                      {m.name ?? m.key}
+                    </span>
                     <span className="text-[11px] text-muted-foreground">
                       {describe(m)} ·{' '}
                       {placed.get(m.key) ? (
@@ -309,12 +320,14 @@ export function FacadeStudio() {
             <Button size="sm" variant="outline" className="text-xs" onClick={addBay}>
               <Plus className="size-3.5" /> Add bay
             </Button>
-          </PanelSection>
+          </StudioSection>
 
           {bay && (
             <FacadeBayControls
               key={bay.key}
               bay={bay}
+              sectionIndex={2}
+              sectionCount={sectionCount}
               onChange={replace}
               canMoveUp={index > 0}
               canMoveDown={index < bays.length - 1}

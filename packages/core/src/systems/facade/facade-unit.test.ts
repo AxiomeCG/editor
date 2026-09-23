@@ -198,6 +198,48 @@ describe('facade unit resolution', () => {
     expect(placements.find((p) => p.bay === 'door')!.opening!.kind).toBe('door')
   })
 
+  test('bays pinned to the same side stack like flex items instead of colliding', () => {
+    const pinned = (key: string, horizontal: 'left' | 'right') => ({
+      key,
+      width: 1.2,
+      widthMode: 'fixed',
+      horizontal,
+      offsetX: 0.4,
+      opening: { width: 1, height: 1.4, sill: 0.9 },
+    })
+    const { placements, skipped } = resolveFacadeUnit(
+      FacadeUnitSchema.parse({
+        name: 'Stacked',
+        bays: [
+          pinned('first', 'left'),
+          {
+            key: 'windows',
+            width: 1.4,
+            pier: 0.6,
+            endPier: 0.3,
+            opening: { width: 1.2, height: 1.4, sill: 0.9 },
+          },
+          pinned('second', 'left'),
+          pinned('last', 'right'),
+        ],
+      }),
+      run(12),
+    )
+    const at = (bay: string) => placements.find((p) => p.bay === bay)!
+    expect(skipped).toBe(0)
+    expect(at('first').left).toBeCloseTo(0.4, 9)
+    // The second left-pinned bay starts its 0.4 m gap after the first.
+    expect(at('second').left).toBeCloseTo(0.4 + 1.2 + 0.4, 9)
+    expect(at('last').right).toBeCloseTo(12 - 0.4, 9)
+    // Repeating bays fill what is left between the two stacks.
+    const repeats = placements.filter((p) => p.bay === 'windows')
+    expect(repeats.length).toBeGreaterThan(0)
+    for (const p of repeats) {
+      expect(p.left).toBeGreaterThanOrEqual(at('second').right - 1e-9)
+      expect(p.right).toBeLessThanOrEqual(at('last').left + 1e-9)
+    }
+  })
+
   test('a pinned bay takes its place first and the repeating bays fill the rest', () => {
     const unit = FacadeUnitSchema.parse({
       name: 'Entrance',
@@ -341,6 +383,49 @@ describe('bays', () => {
     expect(skipped).toBeGreaterThan(0)
   })
 
+  test('a continuous balcony is shared by neighbouring bays, and ends at a bay without one', () => {
+    const door = {
+      key: 'door',
+      width: 1.6,
+      widthMode: 'fixed',
+      horizontal: 'left',
+      offsetX: 0.4,
+      opening: { kind: 'door', width: 1.2, height: 2.1 },
+      balcony: { span: 'continuous', depth: 1.2 },
+    }
+    const windows = {
+      key: 'window',
+      width: 1.4,
+      pier: 0.6,
+      endPier: 0.4,
+      opening: { width: 1.2, height: 1.4, sill: 0.9 },
+      balcony: { span: 'continuous' },
+    }
+    const shared = resolveFacadeUnit(
+      FacadeUnitSchema.parse({ name: 'Shared', bays: [door, windows] }),
+      run(10),
+    )
+    const balconies = shared.placements.flatMap((p) => (p.balcony ? [p.balcony] : []))
+    expect(balconies).toHaveLength(1)
+    expect(balconies[0]!.left).toBeCloseTo(0.4, 9)
+    expect(balconies[0]!.right).toBeCloseTo(Math.max(...shared.placements.map((p) => p.right)), 9)
+    expect(balconies[0]!.depth).toBe(1.2)
+
+    // The same unit with the windows pinned right and no balcony between: two balconies.
+    const split = resolveFacadeUnit(
+      FacadeUnitSchema.parse({
+        name: 'Split',
+        bays: [
+          door,
+          { ...door, key: 'door-right', horizontal: 'right' },
+          { key: 'blank', width: 1, widthMode: 'fixed', horizontal: 'center' },
+        ],
+      }),
+      run(10),
+    )
+    expect(split.placements.filter((p) => p.balcony)).toHaveLength(2)
+  })
+
   test('a continuous balcony runs from the first repeat to the last', () => {
     const { placements } = resolveFacadeUnit(
       FacadeUnitSchema.parse({
@@ -397,6 +482,18 @@ describe('bay cladding', () => {
       { part: 'infill-right', left: 2.1, right: 2.5 },
     ])
     expect(rects({ ...finish, width: 5 })[0]).toEqual({ part: 'infill-left', left: 0, right: 0.9 })
+  })
+
+  test('infill can be only as tall as the opening beside it', () => {
+    const placed = unit(
+      { width: 3, widthMode: 'fixed', infill: { ...finish, height: 'opening' } },
+      { width: 1.2 },
+    )
+    const [placement] = resolveFacadeUnit(placed, run(3)).placements
+    for (const rect of bayCladdingRects(placed.bays[0]!, placement!, 3.2)) {
+      expect(rect.bottom).toBeCloseTo(placement!.opening!.bottom, 9)
+      expect(rect.top).toBeCloseTo(placement!.opening!.top, 9)
+    }
   })
 
   test('a spandrel can sit below the opening, above it, or both', () => {
