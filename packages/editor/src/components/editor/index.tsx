@@ -57,6 +57,7 @@ import { useFacadeTool } from '../../store/use-facade-tool'
 import useFloorplanMode from '../../store/use-floorplan-mode'
 import useSessionGroups from '../../store/use-session-groups'
 import { StandaloneBalconyPreview2D } from '../editor-2d/balcony-preview'
+import { StandaloneFacadePreview2D } from '../editor-2d/facade-preview'
 import { CeilingSelectionAffordanceSystem } from '../systems/ceiling/ceiling-selection-affordance-system'
 import { CeilingSystem } from '../systems/ceiling/ceiling-system'
 import { RoofEditSystem } from '../systems/roof/roof-edit-system'
@@ -84,6 +85,7 @@ import { SitePanel, type SitePanelProps } from '../ui/sidebar/panels/site-panel'
 import type { SidebarTab } from '../ui/sidebar/tab-bar'
 import { useHostPanels } from '../ui/sidebar/use-plugin-panels'
 import { StandaloneBalconyPreview3D } from '../viewer/balcony-preview'
+import { StandaloneFacadePreview3D } from '../viewer/facade-preview'
 import { ViewerStage } from '../viewer/viewer-stage'
 import type { ViewerStageMode } from '../viewer/viewer-stage-modes'
 import { CaptureCameraRig } from './capture-camera-rig'
@@ -824,6 +826,7 @@ const ViewerSceneContent = memo(function ViewerSceneContent({
       {!noEditing && <WallMoveSideHandles />}
       {!noEditing && <FenceTangentLines3D />}
       {!noEditing && <StandaloneBalconyPreview3D />}
+      {!noEditing && <StandaloneFacadePreview3D />}
       {!noEditing && <FloatingActionMenu />}
       {!noEditing && <GroupFloatingActionMenu />}
       {!noEditing && <FloatingBuildingActionMenu />}
@@ -1132,6 +1135,7 @@ const ViewerCanvas = memo(function ViewerCanvas({
               floorplanSceneSlot={
                 <>
                   <StandaloneBalconyPreview2D />
+                  <StandaloneFacadePreview2D />
                   {floorplanSceneSlot}
                 </>
               }

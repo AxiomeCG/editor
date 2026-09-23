@@ -23,6 +23,9 @@ type FacadeToolState = {
   /** Interior walls meeting the test run, in metres from its left corner. */
   partitions: number[]
   setPartitions: (partitions: number[]) => void
+  /** The apply button is hovered or focused: the viewers ghost what it would do. */
+  previewing: boolean
+  setPreviewing: (previewing: boolean) => void
   setUnit: (unit: FacadeUnit) => void
   setScope: (scope: FacadeScope) => void
   openStudio: () => void
@@ -45,6 +48,8 @@ export const useFacadeTool = create<FacadeToolState>((set, get) => ({
   setScenario: (scenario) => set({ scenario }),
   partitions: [],
   setPartitions: (partitions) => set({ partitions }),
+  previewing: false,
+  setPreviewing: (previewing) => set({ previewing }),
   setUnit: (unit) => set({ unit }),
   setScope: (scope) => set({ scope }),
   openStudio: () => {

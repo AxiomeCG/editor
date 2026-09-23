@@ -1,31 +1,21 @@
 'use client'
-import { type AnyNode, type AnyNodeId, readWallFacade, useScene, type WallNode } from '@pascal-app/core'
-import { type FacadeScope, facadeScopeTargets } from '@pascal-app/core/building'
+import { type AnyNodeId, readWallFacade, useScene } from '@pascal-app/core'
+import type { FacadeScope } from '@pascal-app/core/building'
 import { useViewer } from '@pascal-app/viewer'
 import { Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { applyFacade, detachFacade, removeFacade } from '../../../lib/facade-fill'
+import { facadeApplyTargets, facadeWallIds } from '../../../lib/use-facade-preview'
 import { useFacadeTool } from '../../../store/use-facade-tool'
 import { SegmentedControl } from '../controls/segmented-control'
 import { Button } from '../primitives/button'
 import { FacadeElevation } from './facade-elevation'
 
-/** A generated opening or balcony stands for the wall whose facade made it. */
-function facadeWallIds(nodes: Record<string, AnyNode>, ids: readonly string[]) {
-  const walls = new Set<WallNode['id']>()
-  for (const id of ids) {
-    const node = nodes[id]
-    if (node?.type === 'wall') walls.add(node.id)
-    const owner = node?.metadata.facadeOwner
-    if (typeof owner === 'string' && nodes[owner]?.type === 'wall') walls.add(owner as WallNode['id'])
-  }
-  return [...walls]
-}
-
 export function FacadeTool() {
   const unit = useFacadeTool((s) => s.unit)
   const scope = useFacadeTool((s) => s.scope)
-  const { setScope, setUnit, openStudio } = useFacadeTool.getState()
+  const { setScope, setUnit, openStudio, setPreviewing } = useFacadeTool.getState()
+  useEffect(() => () => setPreviewing(false), [setPreviewing])
   const selectedIds = useViewer((s) => s.selection.selectedIds)
   const nodes = useScene((s) => s.nodes)
   const readOnly = useScene((s) => s.readOnly)
@@ -79,13 +69,9 @@ export function FacadeTool() {
   const apply = (force = false) => {
     const current = useScene.getState().nodes
     if (!wallIds.length) return setMessage('Select a wall first.')
-    const picked = current[wallIds[0] as AnyNodeId] as WallNode
-    let target: ReturnType<typeof facadeScopeTargets>
+    let target: ReturnType<typeof facadeApplyTargets>
     try {
-      target =
-        scope === 'wall'
-          ? { walls: wallIds.map((id) => current[id as AnyNodeId] as WallNode), targets: {} }
-          : facadeScopeTargets(current, picked, scope)
+      target = facadeApplyTargets(current, wallIds, scope)
     } catch (error) {
       return setMessage(error instanceof Error ? error.message : 'Something went wrong.')
     }
@@ -150,7 +136,14 @@ export function FacadeTool() {
           className="text-xs"
           disabled={!wallIds.length || applying}
           aria-busy={applying}
-          onClick={() => apply()}
+          onPointerEnter={() => setPreviewing(true)}
+          onPointerLeave={() => setPreviewing(false)}
+          onFocus={() => setPreviewing(true)}
+          onBlur={() => setPreviewing(false)}
+          onClick={() => {
+            setPreviewing(false)
+            apply()
+          }}
         >
           {applying && <Loader2 className="size-3.5 animate-spin" />}
           {applying ? 'Applying…' : wallIds.length ? 'Apply facade' : 'Select a wall to apply'}
