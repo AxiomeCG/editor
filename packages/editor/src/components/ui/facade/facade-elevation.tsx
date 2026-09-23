@@ -11,6 +11,8 @@ import {
 import { useId, useMemo, useRef } from 'react'
 import { cn } from '../../../lib/utils'
 import { bayColor } from './facade-bay-colors'
+import { type InsertionSlot, insertionSlots } from './facade-insertion'
+import { InsertionMagnet } from './facade-insertion-magnet'
 import { materialSwatch } from './facade-material-field'
 import { type FacadeScenario, PARTITION_MARGIN, PARTITION_THICKNESS, scenarioRuns } from '@pascal-app/core/building'
 
@@ -87,6 +89,7 @@ export function FacadeElevation({
   onSelectBay,
   onHoverBay,
   onBayChange,
+  onInsertBay,
   onResize,
   compact = false,
   className,
@@ -104,16 +107,27 @@ export function FacadeElevation({
   onHoverBay?: (key: string | null) => void
   /** Makes the selected bay's children draggable: opening, panels and, when locked, its width. */
   onBayChange?: (bay: FacadeBay) => void
+  /** Offers a magnetic "+" wherever a bay can be added. */
+  onInsertBay?: (slot: InsertionSlot) => void
   onResize?: (width: number) => void
   compact?: boolean
   className?: string
 }) {
   const svg = useRef<SVGSVGElement>(null)
+  const container = useRef<HTMLDivElement>(null)
   const resolution = useMemo(
     () => resolveScenario(unit, { width, height, partitions }),
     [unit, width, height, partitions],
   )
   const { runs } = resolution
+  const quiet = useMemo(
+    () => resolution.placements.flatMap((p) => (p.opening ? [p.opening] : [])),
+    [resolution.placements],
+  )
+  const slots = useMemo(
+    () => (onInsertBay && !compact ? insertionSlots(unit, runs, resolution.placements) : []),
+    [onInsertBay, compact, unit, runs, resolution.placements],
+  )
   const pad = compact ? 0.3 : 0.8
   const below = compact ? 0.4 : 1.3
   // SVG y grows downwards; facade y grows up from the floor.
@@ -133,7 +147,7 @@ export function FacadeElevation({
   }
 
   return (
-    <div className={cn('relative flex min-h-0 flex-col', className)}>
+    <div ref={container} className={cn('relative flex min-h-0 flex-col', className)}>
       <svg
         ref={svg}
         viewBox={`${-pad} ${-pad} ${width + pad * 2} ${height + pad + below}`}
@@ -328,6 +342,16 @@ export function FacadeElevation({
           </g>
         )}
       </svg>
+      {onInsertBay && slots.length > 0 && (
+        <InsertionMagnet
+          container={container}
+          svg={svg}
+          slots={slots}
+          quiet={quiet}
+          height={height}
+          onInsert={onInsertBay}
+        />
+      )}
       {(resolution.error || resolution.skipped > 0) && !compact && (
         <p
           role={resolution.error ? 'alert' : 'status'}

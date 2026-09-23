@@ -108,12 +108,16 @@ export function FacadeStudio() {
   const replace = (next: FacadeBay) =>
     update({ bays: bays.map((m) => (m.key === next.key ? next : m)) })
 
-  const addBay = () => {
-    // Pinned, so it takes its place at once and the repeating bays visibly reflow around it.
+  /**
+   * A new bay, pinned so it takes its place at once and the repeating bays
+   * visibly reflow around it; `index` is its place in the list, which is its
+   * place in its side's stack.
+   */
+  const addBay = (horizontal: 'left' | 'right' = 'left', index = bays.length) => {
     const base: FacadeBay = {
       key: nextKey(bays),
       width: 1.2,
-      horizontal: 'left',
+      horizontal,
       widthMode: 'fixed',
       offsetX: 0.4,
       endPier: 0.4,
@@ -122,7 +126,7 @@ export function FacadeStudio() {
       fit: 'locked',
     }
     const added = { ...base, opening: newOpening(base) }
-    update({ bays: [...bays, added] })
+    update({ bays: [...bays.slice(0, index), added, ...bays.slice(index)] })
     selectBay(added.key)
   }
   const chooseScenario = (next: FacadeStudioScenario) => {
@@ -249,6 +253,7 @@ export function FacadeStudio() {
             hoveredBay={hoveredBay}
             onHoverBay={setHoveredBay}
             onBayChange={replace}
+            onInsertBay={(slot) => addBay(slot.side, slot.index)}
             onSelectBay={selectBay}
             onResize={(width) => setTestSize({ width })}
           />
@@ -330,7 +335,7 @@ export function FacadeStudio() {
                 </li>
               ))}
             </ul>
-            <Button size="sm" variant="outline" className="text-xs" onClick={addBay}>
+            <Button size="sm" variant="outline" className="text-xs" onClick={() => addBay()}>
               <Plus className="size-3.5" /> Add bay
             </Button>
           </StudioSection>
