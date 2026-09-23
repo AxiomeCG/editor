@@ -20,6 +20,7 @@ import { bayColor } from './facade-bay-colors'
 import { FacadeElevation, resolveElevation, resolveScenario } from './facade-elevation'
 import { FacadeBayControls, newOpening } from './facade-bay-controls'
 import { MaterialField } from './facade-material-field'
+import { PREVIEW_DELAY_MS } from './facade-motion'
 import { StudioSection } from './studio-section'
 import { type FacadeScenario, nextPartition, SCENARIO_WIDTHS } from '@pascal-app/core/building'
 
@@ -82,12 +83,16 @@ export function FacadeStudio() {
   // A hovered choice in the side panel, shown as a phantom in both views. Hover intent:
   // it only appears once the pointer rests, so sweeping across the panel stays quiet.
   const [previewBays, setPreviewBays] = useState<readonly FacadeBay[] | null>(null)
+  const [previewCaption, setPreviewCaption] = useState<string | null>(null)
   const intent = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const previewChoice = (next: FacadeBay | readonly FacadeBay[] | null) => {
+  const previewChoice = (next: FacadeBay | readonly FacadeBay[] | null, caption?: string) => {
     clearTimeout(intent.current)
     if (!next) return setPreviewBays(null)
     const bays = Array.isArray(next) ? next : [next as FacadeBay]
-    intent.current = setTimeout(() => setPreviewBays(bays), 120)
+    intent.current = setTimeout(() => {
+      setPreviewBays(bays)
+      setPreviewCaption(caption ?? null)
+    }, PREVIEW_DELAY_MS)
   }
   useEffect(() => () => clearTimeout(intent.current), [])
   // Choosing commits the draft; the phantom of what was hovered has done its job.
@@ -282,6 +287,7 @@ export function FacadeStudio() {
               update({ bays: bays.map((b) => byKey.get(b.key) ?? b) })
             }}
             onPreviewBays={previewChoice}
+            previewCaption={previewCaption}
             preview={previewUnit}
             onSelectBay={selectBay}
             onResize={(width) => setTestSize({ width })}

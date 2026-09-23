@@ -52,8 +52,14 @@ describe('balcony links', () => {
     expect(again[0]!.bays.every((bay) => bay.balcony?.span === 'bay')).toBe(true)
   })
 
-  test('no link without a balcony on either side, and none away from the selected bay', () => {
+  test('no link without a balcony on either side, and only around the bay asked for', () => {
     expect(linksOf([{ ...door, balcony: undefined }, windows], 'door').links).toHaveLength(0)
     expect(linksOf([door, windows], 'nothing').links).toHaveLength(0)
+  })
+
+  test('without a bay to focus on, every gap next to a balcony gets a link', () => {
+    const unit = FacadeUnitSchema.parse({ name: 'Test', bays: [door, { ...windows, balcony: {} }] })
+    const { placements } = resolveScenario(unit, { width: 10, height: 3, partitions: [] })
+    expect(balconyLinks(unit, placements)).toHaveLength(placements.length - 1)
   })
 })

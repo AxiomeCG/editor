@@ -15,8 +15,9 @@ import { cn } from '../../../lib/utils'
 import { bayColor } from './facade-bay-colors'
 import { balconyLinks } from './facade-balcony-links'
 import { type InsertionSlot, insertionSlots } from './facade-insertion'
-import { InsertionMagnet } from './facade-insertion-magnet'
 import { materialSwatch } from './facade-material-field'
+import { ProximityAffordances, type ProximityTarget } from './facade-proximity'
+import { DRAG_THRESHOLD_PX, HOVER_CHROME, INSTANT, MORPH, PRESS_SCALE } from './facade-motion'
 import { type FacadeScenario, PARTITION_MARGIN, PARTITION_THICKNESS, scenarioRuns } from '@pascal-app/core/building'
 
 const RAILING_HEIGHT = 1.1
@@ -95,6 +96,7 @@ export function FacadeElevation({
   onInsertBay,
   onBaysChange,
   onPreviewBays,
+  previewCaption = null,
   preview = null,
   onResize,
   compact = false,
@@ -117,8 +119,10 @@ export function FacadeElevation({
   onInsertBay?: (slot: InsertionSlot) => void
   /** Offers links between neighbouring balconies around the selected bay. */
   onBaysChange?: (bays: FacadeBay[]) => void
-  /** A hovered link's result, to preview; null when the pointer leaves. */
-  onPreviewBays?: (bays: FacadeBay[] | null) => void
+  /** A hovered link's result, to preview, with what it does; null when the pointer leaves. */
+  onPreviewBays?: (bays: FacadeBay[] | null, caption?: string) => void
+  /** Says what the previewed choice does, when it can be put in words. */
+  previewCaption?: string | null
   /**
    * The unit as a hovered choice would make it. It is drawn instead of `unit`,
    * everything gliding to where it would be and back when the preview ends —
@@ -140,29 +144,52 @@ export function FacadeElevation({
     [preview, unit, scenario],
   )
   const { runs } = resolution
-  // Links sit on the committed facade, so previewing one never moves it from under the cursor.
-  const links = useMemo(
-    () =>
-      onBaysChange && !compact
-        ? balconyLinks(unit, committed ?? resolution.placements, selectedBay)
-        : [],
-    [onBaysChange, compact, unit, committed, resolution.placements, selectedBay],
-  )
   // Glide only when a preview starts, changes or ends; edits (a slider drag) stay instant.
   const reduced = useReducedMotion()
   const lastPreview = useRef(preview)
   const transition: Transition = lastPreview.current !== preview && !reduced ? MORPH : INSTANT
+  const chrome = reduced ? INSTANT : HOVER_CHROME
   useEffect(() => {
     lastPreview.current = preview
   })
+  // Affordances anchor on the committed facade, so a preview never moves one from under the cursor.
+  const anchorPlacements = committed ?? resolution.placements
   const quiet = useMemo(
-    () => resolution.placements.flatMap((p) => (p.opening ? [p.opening] : [])),
-    [resolution.placements],
+    () => anchorPlacements.flatMap((p) => (p.opening ? [p.opening] : [])),
+    [anchorPlacements],
   )
   const slots = useMemo(
-    () => (onInsertBay && !compact ? insertionSlots(unit, runs, resolution.placements) : []),
-    [onInsertBay, compact, unit, runs, resolution.placements],
+    () => (onInsertBay && !compact ? insertionSlots(unit, runs, anchorPlacements) : []),
+    [onInsertBay, compact, unit, runs, anchorPlacements],
   )
+  const links = useMemo(
+    () => (onBaysChange && !compact ? balconyLinks(unit, anchorPlacements) : []),
+    [onBaysChange, compact, unit, anchorPlacements],
+  )
+  const targets: ProximityTarget[] = [
+    ...slots.map(
+      (slot): ProximityTarget => ({
+        key: `slot:${slot.key}`,
+        x: slot.x,
+        up: height / 2,
+        icon: 'plus',
+        label: `Add a bay pinned ${slot.side}`,
+        guide: true,
+        activate: () => onInsertBay?.(slot),
+      }),
+    ),
+    ...links.map(
+      (link): ProximityTarget => ({
+        key: `link:${link.key}`,
+        x: link.x,
+        up: 0.55,
+        icon: link.joined ? 'unlink' : 'link',
+        label: link.caption,
+        activate: () => onBaysChange?.(link.bays),
+        preview: (on) => onPreviewBays?.(on ? link.bays : null, link.caption),
+      }),
+    ),
+  ]
   const pad = compact ? 0.3 : 0.8
   const below = compact ? 0.4 : 1.3
   // SVG y grows downwards; facade y grows up from the floor.
@@ -321,38 +348,6 @@ export function FacadeElevation({
             </rect>
           ))}
 
-        {links.map((link) => (
-          <g
-            key={link.key}
-            role="button"
-            data-balcony-link=""
-            aria-label={link.joined ? 'Split the balcony between these bays' : 'Join these bays with one balcony'}
-            className="cursor-pointer"
-            onPointerEnter={() => onPreviewBays?.(link.bays)}
-            onPointerLeave={() => onPreviewBays?.(null)}
-            onClick={() => onBaysChange?.(link.bays)}
-          >
-            <title>
-              {link.joined
-                ? 'Split: each bay gets its own balcony again'
-                : 'Join: one continuous balcony across both bays'}
-            </title>
-            <circle
-              cx={link.x}
-              cy={height - 0.55}
-              r={0.17}
-              className={link.joined ? 'fill-foreground' : 'fill-background stroke-foreground'}
-              strokeWidth={1.5}
-              vectorEffect="non-scaling-stroke"
-            />
-            {link.joined ? (
-              <Unlink2 x={link.x - 0.1} y={height - 0.65} width={0.2} height={0.2} className="text-background" />
-            ) : (
-              <Link2 x={link.x - 0.1} y={height - 0.65} width={0.2} height={0.2} className="text-foreground" />
-            )}
-          </g>
-        ))}
-
         {partitions.map((x, index) => (
           <Partition
             // biome-ignore lint/suspicious/noArrayIndexKey: a partition's identity is its place in the list
@@ -396,6 +391,12 @@ export function FacadeElevation({
         )}
 
         {onBayChange && !compact && !preview && selected[0] && (
+          <motion.g
+            key={`handles:${selectedBay}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={chrome}
+          >
           <BayHandles
             bay={unit.bays.find((b) => b.key === selectedBay)!}
             placement={selected[0]}
@@ -404,6 +405,7 @@ export function FacadeElevation({
             toRun={toRun}
             onChange={onBayChange}
           />
+          </motion.g>
         )}
 
         {onResize && (
@@ -423,18 +425,22 @@ export function FacadeElevation({
           </g>
         )}
       </svg>
-      {onInsertBay && !preview && slots.length > 0 && (
-        <InsertionMagnet
+      {targets.length > 0 && (
+        <ProximityAffordances
           container={container}
           svg={svg}
-          slots={slots}
+          targets={targets}
           quiet={quiet}
           height={height}
-          onInsert={onInsertBay}
         />
       )}
       {committed && !compact && (
-        <PreviewSummary unit={unit} before={committed} after={resolution.placements} />
+        <PreviewSummary
+          unit={unit}
+          before={committed}
+          after={resolution.placements}
+          caption={previewCaption}
+        />
       )}
       {!preview && (resolution.error || resolution.skipped > 0) && !compact && (
         <p
@@ -449,19 +455,18 @@ export function FacadeElevation({
   )
 }
 
-/** One short ease-out, no bounce: enough to show where things go, not enough to make anyone queasy. */
-const MORPH: Transition = { duration: 0.34, ease: [0.22, 1, 0.36, 1] }
-const INSTANT: Transition = { duration: 0 }
 
 /** What the hovered choice changes, in words, and that nothing is committed yet. */
 function PreviewSummary({
   unit,
   before,
   after,
+  caption,
 }: {
   unit: FacadeUnit
   before: readonly FacadeBayPlacement[]
   after: readonly FacadeBayPlacement[]
+  caption: string | null
 }) {
   const count = (placements: readonly FacadeBayPlacement[], key: string) =>
     placements.filter((p) => p.bay === key).length
@@ -478,7 +483,7 @@ function PreviewSummary({
       <span className="font-medium">Previewing</span>
       <span className="text-muted-foreground">
         {' · '}
-        {changes.length ? changes.join(' · ') : 'same bays, new layout'}
+        {[caption, ...changes].filter(Boolean).join(' · ') || 'same bays, new layout'}
         {' · click to keep, move away to cancel'}
       </span>
     </p>
@@ -514,7 +519,12 @@ function BayHandles({
   const { opening } = placement
   // The drag in progress: where it started and how to turn a delta into a bay,
   // captured at pointer-down so each step measures from the start, not the last step.
-  const drag = useRef<{ from: number; apply: (delta: number) => FacadeBay | null } | null>(null)
+  const drag = useRef<{
+    from: number
+    clientX: number
+    armed: boolean
+    apply: (delta: number) => FacadeBay | null
+  } | null>(null)
   const rects = bayCladdingRects(bay, placement, height)
   const panel = (part: string) => rects.find((rect) => rect.part === part)
   const infillLeft = panel('infill-left')
@@ -531,11 +541,15 @@ function BayHandles({
         if (from === null) return
         event.stopPropagation()
         event.currentTarget.setPointerCapture(event.pointerId)
-        drag.current = { from, apply }
+        drag.current = { from, clientX: event.clientX, armed: false, apply }
       }}
       onPointerMove={(event) => {
         const at = toRun(event.clientX)
         if (!drag.current || at === null) return
+        // A press only becomes a drag after a few pixels, so a click never nudges a width.
+        if (!drag.current.armed && Math.abs(event.clientX - drag.current.clientX) < DRAG_THRESHOLD_PX)
+          return
+        drag.current.armed = true
         const next = drag.current.apply(at - drag.current.from)
         if (next) onChange(next)
       }}

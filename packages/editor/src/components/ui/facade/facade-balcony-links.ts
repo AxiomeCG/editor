@@ -12,6 +12,8 @@ export type BalconyLink = {
   joined: boolean
   /** The bays as the link would leave them. */
   bays: FacadeBay[]
+  /** What following it does, in words, for the preview banner. */
+  caption: string
 }
 
 const continuous = (bay: FacadeBay) => bay.balcony?.span === 'continuous'
@@ -31,40 +33,41 @@ function split(a: FacadeBay, b: FacadeBay): FacadeBay[] {
 }
 
 /**
- * The links around the selected bay: one per neighbouring bay pair in each
- * run, where at least one of the two has a balcony. `placements` are keyed
+ * A link in every gap between two neighbouring placements where at least one
+ * has a balcony — around `onlyBay` when given, else everywhere (the elevation
+ * reveals them by proximity). `placements` are keyed
  * `<run index>:<bay key>:<repeat>`.
  */
 export function balconyLinks(
   unit: FacadeUnit,
   placements: readonly FacadeBayPlacement[],
-  selectedBay: string | null,
+  onlyBay: string | null = null,
 ): BalconyLink[] {
-  if (!selectedBay) return []
   const bayOf = new Map(unit.bays.map((bay) => [bay.key, bay]))
   const runOf = (placement: FacadeBayPlacement) => placement.key.split(':')[0]
   const inOrder = [...placements].sort((a, b) =>
     runOf(a) === runOf(b) ? a.left - b.left : runOf(a)! < runOf(b)! ? -1 : 1,
   )
-  const seen = new Set<string>()
   const links: BalconyLink[] = []
   for (let i = 0; i + 1 < inOrder.length; i++) {
     const left = inOrder[i]!
     const right = inOrder[i + 1]!
     if (runOf(left) !== runOf(right)) continue
-    if (left.bay !== selectedBay && right.bay !== selectedBay) continue
+    if (onlyBay && left.bay !== onlyBay && right.bay !== onlyBay) continue
     const a = bayOf.get(left.bay)
     const b = bayOf.get(right.bay)
     if (!a || !b || (!a.balcony && !b.balcony)) continue
-    const pair = `${runOf(left)}:${[a.key, b.key].sort().join('|')}`
-    if (seen.has(pair)) continue
-    seen.add(pair)
     const joined = !!a.balcony && !!b.balcony && continuous(a) && continuous(b)
+    const name = (bay: FacadeBay) => bay.name ?? bay.key
+    const pairName = a.key === b.key ? `every ${name(a)}` : `${name(a)} and ${name(b)}`
     links.push({
-      key: pair,
+      key: `${left.key}|${right.key}`,
       x: (left.right + right.left) / 2,
       joined,
       bays: joined ? split(a, b) : join(a, b),
+      caption: joined
+        ? `Split: ${pairName} get their own balconies`
+        : `Join: one continuous balcony across ${pairName}`,
     })
   }
   return links
