@@ -75,8 +75,6 @@ export function MaterialField({
           side="left"
           align="start"
           className="h-[26rem] w-80 p-3"
-          // Escape closes the picker only, not the studio (which discards the draft on Escape).
-          onEscapeKeyDown={(event) => event.stopPropagation()}
         >
           <MaterialPicker selectedMaterialPreset={value} onSelectMaterialPreset={onChange} />
         </PopoverContent>

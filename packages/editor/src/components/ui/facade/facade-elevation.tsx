@@ -83,7 +83,9 @@ export function FacadeElevation({
   partitions = NO_PARTITIONS,
   onPartitionsChange,
   selectedBay = null,
+  hoveredBay = null,
   onSelectBay,
+  onHoverBay,
   onResize,
   compact = false,
   className,
@@ -95,7 +97,10 @@ export function FacadeElevation({
   partitions?: readonly number[]
   onPartitionsChange?: (partitions: number[]) => void
   selectedBay?: string | null
+  /** The bay under the pointer in any studio view. */
+  hoveredBay?: string | null
   onSelectBay?: (key: string) => void
+  onHoverBay?: (key: string | null) => void
   onResize?: (width: number) => void
   compact?: boolean
   className?: string
@@ -170,7 +175,7 @@ export function FacadeElevation({
         {/* Every bay's extent: outlined in its colour, filled when selected. Gaps are piers. */}
         {resolution.placements.map((placement) => {
           const color = bayColor(unit, placement.bay)
-          const isSelected = placement.bay === selectedBay
+          const isSelected = placement.bay === selectedBay || placement.bay === hoveredBay
           return (
             <rect
               key={`span:${placement.key}`}
@@ -242,6 +247,8 @@ export function FacadeElevation({
               height={height + BAND.top + BAND.height + 0.1}
               fill="transparent"
               className="cursor-pointer"
+              onPointerEnter={() => onHoverBay?.(placement.bay)}
+              onPointerLeave={() => onHoverBay?.(null)}
               onClick={() => onSelectBay(placement.bay)}
             >
               <title>{unit.bays.find((m) => m.key === placement.bay)?.name ?? placement.bay}</title>

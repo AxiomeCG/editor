@@ -26,6 +26,12 @@ type FacadeToolState = {
   /** The apply button is hovered or focused: the viewers ghost what it would do. */
   previewing: boolean
   setPreviewing: (previewing: boolean) => void
+  /** The bay under the pointer in any studio view, highlighted in all of them. */
+  hoveredBay: string | null
+  setHoveredBay: (key: string | null) => void
+  /** Keep every bay's extent drawn on the 3D facade, not only the hovered one. */
+  showBays: boolean
+  setShowBays: (show: boolean) => void
   setUnit: (unit: FacadeUnit) => void
   setScope: (scope: FacadeScope) => void
   openStudio: () => void
@@ -50,6 +56,10 @@ export const useFacadeTool = create<FacadeToolState>((set, get) => ({
   setPartitions: (partitions) => set({ partitions }),
   previewing: false,
   setPreviewing: (previewing) => set({ previewing }),
+  hoveredBay: null,
+  setHoveredBay: (hoveredBay) => set({ hoveredBay }),
+  showBays: false,
+  setShowBays: (showBays) => set({ showBays }),
   setUnit: (unit) => set({ unit }),
   setScope: (scope) => set({ scope }),
   openStudio: () => {

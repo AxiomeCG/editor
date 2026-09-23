@@ -65,6 +65,8 @@ export function FacadeStudio() {
   const testHeight = useFacadeTool((s) => s.testHeight)
   const studioView = useFacadeTool((s) => s.studioView)
   const scenarioKind = useFacadeTool((s) => s.scenario)
+  const hoveredBay = useFacadeTool((s) => s.hoveredBay)
+  const setHoveredBay = useFacadeTool((s) => s.setHoveredBay)
   const partitions = useFacadeTool((s) => s.partitions)
   const { setDraft, selectBay, setTestSize, setStudioView, closeStudio, setScenario, setPartitions } =
     useFacadeTool.getState()
@@ -80,7 +82,10 @@ export function FacadeStudio() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') useFacadeTool.getState().closeStudio(false)
+      if (event.key !== 'Escape') return
+      // Escape inside an open popover, picker or menu closes that, not the studio (and its draft).
+      if ((event.target as Element | null)?.closest?.('[data-radix-popper-content-wrapper]')) return
+      useFacadeTool.getState().closeStudio(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -240,6 +245,8 @@ export function FacadeStudio() {
             partitions={scenario.partitions}
             onPartitionsChange={setPartitions}
             selectedBay={selectedBay}
+            hoveredBay={hoveredBay}
+            onHoverBay={setHoveredBay}
             onSelectBay={selectBay}
             onResize={(width) => setTestSize({ width })}
           />
@@ -289,12 +296,16 @@ export function FacadeStudio() {
                   <button
                     type="button"
                     onClick={() => selectBay(m.key)}
+                    onPointerEnter={() => setHoveredBay(m.key)}
+                    onPointerLeave={() => setHoveredBay(null)}
                     aria-pressed={m.key === selectedBay}
                     className={cn(
                       'flex w-full flex-col items-start rounded-md border px-2.5 py-1.5 text-left',
                       m.key === selectedBay
                         ? 'border-primary/60 bg-primary/10'
-                        : 'border-border/50 hover:bg-accent/40',
+                        : m.key === hoveredBay
+                          ? 'border-border bg-accent/40'
+                          : 'border-border/50 hover:bg-accent/40',
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm">
