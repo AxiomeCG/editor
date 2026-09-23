@@ -14,6 +14,7 @@ import { ToggleControl } from '../controls/toggle-control'
 import { Popover, PopoverContent, PopoverTrigger } from '../primitives/popover'
 import { bayColor } from './facade-bay-colors'
 import { buildFacadeBayScene } from './facade-bay-scene'
+import { partAt } from './facade-parts'
 import { resolveScenario } from './facade-elevation'
 
 function FacadeBayContent({ unit, scenario }: { unit: FacadeUnit; scenario: FacadeScenario }) {
@@ -35,7 +36,7 @@ function BayOverlay({ unit, scenario }: { unit: FacadeUnit; scenario: FacadeScen
   const hoveredBay = useFacadeTool((s) => s.hoveredBay)
   const selectedBay = useFacadeTool((s) => s.selectedBay)
   const showBays = useFacadeTool((s) => s.showBays)
-  const { setHoveredBay, selectBay } = useFacadeTool.getState()
+  const { setHoveredBay, selectPart } = useFacadeTool.getState()
   const invalidate = useThree((state) => state.invalidate)
   useEffect(() => invalidate(), [hoveredBay, selectedBay, showBays, invalidate])
   const bayAt = (x: number) => placements.find((p) => p.left <= x && x <= p.right)?.bay ?? null
@@ -50,8 +51,10 @@ function BayOverlay({ unit, scenario }: { unit: FacadeUnit; scenario: FacadeScen
         }}
         onPointerOut={() => setHoveredBay(null)}
         onClick={(event) => {
-          const bay = bayAt(event.point.x)
-          if (bay) selectBay(bay)
+          const x = event.point.x
+          const placement = placements.find((p) => p.left <= x && x <= p.right)
+          const bay = placement && unit.bays.find((b) => b.key === placement.bay)
+          if (placement && bay) selectPart(bay.key, partAt(bay, placement, height, x, event.point.y))
         }}
       >
         <planeGeometry args={[width, height]} />

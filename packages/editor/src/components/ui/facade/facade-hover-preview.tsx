@@ -60,3 +60,38 @@ export function PreviewToggle(props: {
     />
   )
 }
+
+/** The panel's preview hook-up, for controls that are neither segments nor toggles. */
+export function useHoverPreview() {
+  return useContext(HoverPreviewContext)
+}
+
+/** A button that previews what clicking it would do, then does it. */
+export function PreviewButton({
+  onClick,
+  children,
+  className,
+  label,
+}: {
+  onClick: () => void
+  children: ReactNode
+  className?: string
+  label?: string
+}) {
+  const preview = useContext(HoverPreviewContext)
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={() => {
+        preview?.end()
+        onClick()
+      }}
+      onPointerEnter={preview ? () => preview.begin(onClick) : undefined}
+      onPointerLeave={preview ? () => preview.end() : undefined}
+      className={className}
+    >
+      {children}
+    </button>
+  )
+}

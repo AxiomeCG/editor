@@ -1,6 +1,7 @@
 import { DEFAULT_FACADE_UNIT, type FacadeUnit } from '@pascal-app/core'
 import type { FacadeScope } from '@pascal-app/core/building'
 import { create } from 'zustand'
+import type { BayPart } from '../components/ui/facade/facade-parts'
 
 export type FacadeStudioView = '3d' | '2d' | 'split'
 /** What the studio tests the unit against: one run, interior walls meeting it, or several widths. */
@@ -32,6 +33,10 @@ type FacadeToolState = {
   /** Keep every bay's extent drawn on the 3D facade, not only the hovered one. */
   showBays: boolean
   setShowBays: (show: boolean) => void
+  /** A part picked in the drawing: the side panel opens its section. `nonce` repeats a pick. */
+  focus: { part: BayPart; nonce: number } | null
+  /** Select a bay from the drawing, opening the section of the part that was clicked. */
+  selectPart: (bay: string, part: BayPart) => void
   setUnit: (unit: FacadeUnit) => void
   setScope: (scope: FacadeScope) => void
   openStudio: () => void
@@ -60,6 +65,9 @@ export const useFacadeTool = create<FacadeToolState>((set, get) => ({
   setHoveredBay: (hoveredBay) => set({ hoveredBay }),
   showBays: false,
   setShowBays: (showBays) => set({ showBays }),
+  focus: null,
+  selectPart: (bay, part) =>
+    set((state) => ({ selectedBay: bay, focus: { part, nonce: (state.focus?.nonce ?? 0) + 1 } })),
   setUnit: (unit) => set({ unit }),
   setScope: (scope) => set({ scope }),
   openStudio: () => {
@@ -67,7 +75,8 @@ export const useFacadeTool = create<FacadeToolState>((set, get) => ({
     set({ draft: unit, selectedBay: unit.bays[0]?.key ?? null })
   },
   setDraft: (draft) => set({ draft }),
-  selectBay: (selectedBay) => set({ selectedBay }),
+  // Picked from the list, not the drawing: no part to open.
+  selectBay: (selectedBay) => set({ selectedBay, focus: null }),
   setTestSize: ({ width, height }) =>
     set((state) => ({
       testWidth: width ?? state.testWidth,

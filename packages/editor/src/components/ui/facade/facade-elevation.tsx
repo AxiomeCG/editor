@@ -15,6 +15,7 @@ import { cn } from '../../../lib/utils'
 import { bayColor } from './facade-bay-colors'
 import { balconyLinks } from './facade-balcony-links'
 import { type InsertionSlot, insertionSlots } from './facade-insertion'
+import { type BayPart, partAt } from './facade-parts'
 import { materialSwatch } from './facade-material-field'
 import { ProximityAffordances, type ProximityTarget } from './facade-proximity'
 import { DRAG_THRESHOLD_PX, HOVER_CHROME, INSTANT, MORPH, PRESS_SCALE } from './facade-motion'
@@ -91,6 +92,7 @@ export function FacadeElevation({
   selectedBay = null,
   hoveredBay = null,
   onSelectBay,
+  onSelectPart,
   onHoverBay,
   onBayChange,
   onInsertBay,
@@ -112,6 +114,8 @@ export function FacadeElevation({
   /** The bay under the pointer in any studio view. */
   hoveredBay?: string | null
   onSelectBay?: (key: string) => void
+  /** Clicking a bay in the drawing also says which part of it was clicked. */
+  onSelectPart?: (key: string, part: BayPart) => void
   onHoverBay?: (key: string | null) => void
   /** Makes the selected bay's children draggable: opening, panels and, when locked, its width. */
   onBayChange?: (bay: FacadeBay) => void
@@ -199,6 +203,17 @@ export function FacadeElevation({
   const wallFill = paint.fill(shown.paint.wall)
   const selected = resolution.placements.filter((p) => p.bay === selectedBay)
 
+  /** A pointer position in wall metres, `up` from the floor. */
+  const toWall = (clientX: number, clientY: number) => {
+    const element = svg.current
+    const matrix = element?.getScreenCTM()
+    if (!element || !matrix) return null
+    const point = element.createSVGPoint()
+    point.x = clientX
+    point.y = clientY
+    const at = point.matrixTransform(matrix.inverse())
+    return { x: at.x, up: height - at.y }
+  }
   const toRun = (clientX: number) => {
     const element = svg.current
     const matrix = element?.getScreenCTM()
@@ -342,7 +357,13 @@ export function FacadeElevation({
               className="cursor-pointer"
               onPointerEnter={() => onHoverBay?.(placement.bay)}
               onPointerLeave={() => onHoverBay?.(null)}
-              onClick={() => onSelectBay(placement.bay)}
+              onClick={(event) => {
+                const bay = shown.bays.find((b) => b.key === placement.bay)
+                const at = toWall(event.clientX, event.clientY)
+                if (onSelectPart && bay && at)
+                  onSelectPart(placement.bay, partAt(bay, placement, height, at.x, at.up))
+                else onSelectBay(placement.bay)
+              }}
             >
               <title>{unit.bays.find((m) => m.key === placement.bay)?.name ?? placement.bay}</title>
             </rect>

@@ -19,7 +19,8 @@ import { FacadeBay3D } from './facade-bay-3d'
 import { bayColor } from './facade-bay-colors'
 import { FacadeElevation, resolveElevation, resolveScenario } from './facade-elevation'
 import { FacadeBayControls, newOpening } from './facade-bay-controls'
-import { MaterialField } from './facade-material-field'
+import { MaterialField, materialSwatch } from './facade-material-field'
+import { bayParts } from './facade-parts'
 import { PREVIEW_DELAY_MS } from './facade-motion'
 import { StudioSection } from './studio-section'
 import { type FacadeScenario, nextPartition, SCENARIO_WIDTHS } from '@pascal-app/core/building'
@@ -67,6 +68,8 @@ export function FacadeStudio() {
   const studioView = useFacadeTool((s) => s.studioView)
   const scenarioKind = useFacadeTool((s) => s.scenario)
   const hoveredBay = useFacadeTool((s) => s.hoveredBay)
+  const focus = useFacadeTool((s) => s.focus)
+  const selectPart = useFacadeTool((s) => s.selectPart)
   const setHoveredBay = useFacadeTool((s) => s.setHoveredBay)
   const partitions = useFacadeTool((s) => s.partitions)
   const { setDraft, selectBay, setTestSize, setStudioView, closeStudio, setScenario, setPartitions } =
@@ -129,9 +132,8 @@ export function FacadeStudio() {
     placed.set(placement.bay, (placed.get(placement.bay) ?? 0) + 1)
   const index = bays.findIndex((m) => m.key === selectedBay)
   const bay = index >= 0 ? bays[index] : undefined
-  // Paint and Bays, then the selected bay's Rhythm, Opening, Infill, Spandrel (with an
-  // opening only) and Balcony.
-  const sectionCount = 2 + (bay ? (bay.opening ? 5 : 4) : 0)
+  // Paint and Bays, then the selected bay's layout and the parts it has.
+  const sectionCount = 2 + (bay ? bayParts(bay).length : 0)
   const replace = (next: FacadeBay) =>
     update({ bays: bays.map((m) => (m.key === next.key ? next : m)) })
 
@@ -290,6 +292,7 @@ export function FacadeStudio() {
             previewCaption={previewCaption}
             preview={previewUnit}
             onSelectBay={selectBay}
+            onSelectPart={selectPart}
             onResize={(width) => setTestSize({ width })}
           />
         )}
@@ -309,10 +312,22 @@ export function FacadeStudio() {
         </div>
 
         <div data-studio-sections className="subtle-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <StudioSection title="Paint" index={0} count={sectionCount}>
-            <p className="text-[11px] leading-4 text-muted-foreground">
-              From the paint library. Left as is, the walls and frames keep their own paint.
-            </p>
+          <StudioSection
+            title="Paint"
+            summary={
+              draft.paint.wall || draft.paint.frame
+                ? [
+                    draft.paint.wall && `Wall ${materialSwatch(draft.paint.wall)?.label ?? ''}`,
+                    draft.paint.frame && `frames ${materialSwatch(draft.paint.frame)?.label ?? ''}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'Keeps the walls’ own paint'
+            }
+            defaultExpanded={false}
+            index={0}
+            count={sectionCount}
+          >
             <MaterialField
               label="Wall"
               value={draft.paint.wall}
@@ -327,11 +342,12 @@ export function FacadeStudio() {
             />
           </StudioSection>
 
-          <StudioSection title="Bays" index={1} count={sectionCount}>
-            <p className="text-[11px] leading-4 text-muted-foreground">
-              Pinned bays take their place first, stacking from their corner in list order, each
-              after its gap; repeating and stretching bays fill the space left between them.
-            </p>
+          <StudioSection
+            title="Bays"
+            summary={`${bays.length} ${bays.length === 1 ? 'bay' : 'bays'} · pinned first, repeats fill the rest`}
+            index={1}
+            count={sectionCount}
+          >
             <ul className="flex flex-col gap-1">
               {bays.map((m) => (
                 <li key={m.key}>
@@ -381,6 +397,7 @@ export function FacadeStudio() {
               bay={bay}
               sectionIndex={2}
               sectionCount={sectionCount}
+              focus={focus}
               onChange={replace}
               onPreview={previewChoice}
               canMoveUp={index > 0}
