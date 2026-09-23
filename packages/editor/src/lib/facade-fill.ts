@@ -2,16 +2,17 @@ import {
   type AnyNodeId,
   type FacadeUnit,
   readWallFacade,
-  releaseNodeRepetition,
   runAsSingleSceneHistoryStep,
   useScene,
   type WallNode,
 } from '@pascal-app/core'
 import {
   FACADE_OWNERSHIP_KEYS,
+  FACADE_RELEASED_KEY,
   type FacadeWallTarget,
   facadeFillPatches,
   planFacadeFill,
+  reclaimDetachedFacades,
 } from '@pascal-app/core/building'
 
 let generationDepth = 0
@@ -37,25 +38,45 @@ const assertEditable = () => {
   if (useScene.getState().readOnly) throw Error('This scene is read-only.')
 }
 
-/** Fill walls with a facade in one undo step. Throws a sentence the panel can show. */
+/**
+ * Fill walls with a facade in one undo step. Throws a sentence the panel can show.
+ * `force` takes back detached facades first: what they released is replaced.
+ */
 export function applyFacade(
   wallIds: readonly WallNode['id'][],
   unit: FacadeUnit,
-  options: { targets?: Record<string, FacadeWallTarget>; sourceItemId?: string } = {},
+  {
+    force = false,
+    ...options
+  }: { targets?: Record<string, FacadeWallTarget>; sourceItemId?: string; force?: boolean } = {},
 ) {
   assertEditable()
-  const walls = currentWalls(wallIds)
   return generate(() => {
-    const nodes = useScene.getState().nodes
-    const plan = planFacadeFill({ walls, nodes, unit, ...options })
+    const reclaim = force
+      ? reclaimDetachedFacades(currentWalls(wallIds), useScene.getState().nodes)
+      : {
+          walls: currentWalls(wallIds),
+          nodes: useScene.getState().nodes,
+          removed: [],
+          reclaimed: [],
+        }
+    const { nodes } = reclaim
+    const plan = planFacadeFill({ walls: reclaim.walls, nodes, unit, ...options })
     // One store write per kind, however many walls: every write fans out to every scene subscriber.
     const patches = facadeFillPatches(plan, nodes)
     const scene = useScene.getState()
-    const removed = patches.flatMap((p) => (p.op === 'delete' ? [p.id] : []))
+    const removed = [
+      ...reclaim.removed,
+      ...patches.flatMap((p) => (p.op === 'delete' ? [p.id] : [])),
+    ]
     const created = patches.flatMap((p) =>
       p.op === 'create' ? [{ node: p.node, parentId: p.parentId }] : [],
     )
-    const updated = patches.flatMap((p) => (p.op === 'update' ? [{ id: p.id, data: p.data }] : []))
+    const updated = [
+      // A reclaimed wall is live again even when its refill changes nothing else.
+      ...reclaim.reclaimed.map((wall) => ({ id: wall.id, data: { metadata: wall.metadata } })),
+      ...patches.flatMap((p) => (p.op === 'update' ? [{ id: p.id, data: p.data }] : [])),
+    ]
     if (removed.length) scene.deleteNodes(removed)
     if (created.length) scene.createNodes(created)
     if (updated.length) scene.updateNodes(updated)
@@ -99,13 +120,14 @@ export function detachFacade(
       return config && !config.detached
     })
     const owners = new Set<string>(walls.map((wall) => wall.id))
-    releaseNodeRepetition(
-      Object.values(useScene.getState().nodes).filter((node) =>
-        owners.has(node.metadata.facadeOwner as string),
-      ),
-      FACADE_OWNERSHIP_KEYS,
-      useScene.getState,
-    )
+    const released = Object.values(useScene.getState().nodes).flatMap((node) => {
+      const owner = node.metadata.facadeOwner as string
+      if (!owners.has(owner)) return []
+      const metadata: Record<string, unknown> = { ...node.metadata, [FACADE_RELEASED_KEY]: owner }
+      for (const key of FACADE_OWNERSHIP_KEYS) delete metadata[key]
+      return [{ id: node.id, data: { metadata } }]
+    })
+    if (released.length) useScene.getState().updateNodes(released)
     for (const wall of walls)
       useScene.getState().updateNode(wall.id, {
         metadata: {

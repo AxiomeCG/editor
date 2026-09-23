@@ -12,11 +12,13 @@ import {
 import { readWallFacade, type WallFacade } from '../systems/facade/facade-config'
 import { DEFAULT_FACADE_UNIT, FacadeUnitSchema } from '../systems/facade/facade-unit'
 import {
+  FACADE_RELEASED_KEY,
   type FacadeFillPlan,
   type FacadeScenePatch,
   facadeFillPatches,
   facadeLayoutFrame,
   planFacadeFill,
+  reclaimDetachedFacades,
 } from './facade'
 import { facadeScopeTargets } from './facade-scope'
 
@@ -485,5 +487,49 @@ describe('fill patches', () => {
     )
     const again = planFacadeFill({ walls: [nodes[wall.id] as WallNode], nodes, unit })
     expect(facadeFillPatches(again, nodes)).toEqual([])
+  })
+})
+
+describe('forcing a detached facade back', () => {
+  test('removes only what it released, and the wall plans again', () => {
+    const base = straightWall(10)
+    const released = WindowNode.parse({
+      parentId: base.id,
+      wallId: base.id,
+      position: [2, 1.6, 0],
+      metadata: { [FACADE_RELEASED_KEY]: base.id },
+    })
+    const byHand = WindowNode.parse({ parentId: base.id, wallId: base.id, position: [8, 1.6, 0] })
+    const config = planFacadeFill({ walls: [base], nodes: scene(base), unit: DEFAULT_FACADE_UNIT })
+      .walls[0]!.wallUpdate!.metadata.proceduralFacade as WallFacade
+    const wall = {
+      ...base,
+      children: [released.id, byHand.id],
+      metadata: {
+        proceduralFacade: { ...config, detached: true, detachedReason: 'Window edited.' },
+      },
+    } as WallNode
+    const nodes = scene(wall, released, byHand)
+    expect(() => planFacadeFill({ walls: [wall], nodes, unit: DEFAULT_FACADE_UNIT })).toThrow()
+
+    const reclaim = reclaimDetachedFacades([wall], nodes)
+
+    expect(reclaim.removed).toEqual([released.id])
+    expect(reclaim.nodes[released.id]).toBeUndefined()
+    expect(reclaim.nodes[byHand.id]).toBeDefined()
+    expect((reclaim.nodes[wall.id] as WallNode).children).toEqual([byHand.id])
+    expect(readWallFacade(reclaim.walls[0]!.metadata)?.detached).toBeUndefined()
+    const plan = planFacadeFill({
+      walls: reclaim.walls,
+      nodes: reclaim.nodes,
+      unit: DEFAULT_FACADE_UNIT,
+    })
+    expect(windowsOf(plan).length).toBeGreaterThan(0)
+  })
+
+  test('leaves live facades alone', () => {
+    const wall = straightWall(8)
+    const nodes = scene(wall)
+    expect(reclaimDetachedFacades([wall], nodes)).toMatchObject({ removed: [], reclaimed: [] })
   })
 })

@@ -39,6 +39,8 @@ import {
 
 /** Metadata a facade stamps on what it generates; releasing them detaches the node. */
 export const FACADE_OWNERSHIP_KEYS = ['facadeOwner', 'facadeCell'] as const
+/** Set on what a facade released when it detached, so forcing it back can take exactly those. */
+export const FACADE_RELEASED_KEY = 'facadeReleasedFrom'
 export const MAX_FACADE_OPENINGS = 400
 /** How far an opening may sit past a wall's end and still count as inside it. */
 const HOST_TOLERANCE = 1e-6
@@ -492,4 +494,49 @@ export function facadeFillPatches(
       updates.push({ op: 'update', id: wallPlan.wall.id as AnyNodeId, data: wallPlan.wallUpdate })
   }
   return [...removals, ...creations, ...updates]
+}
+
+/**
+ * Detached facades on these walls, taken back so they generate again: what
+ * they released when detached is removed — hand edits to it included — and
+ * their config is live. Elements added by hand are left as they are. Returns
+ * the scene as it would be, for planning, and the nodes to delete.
+ */
+export function reclaimDetachedFacades(
+  walls: readonly WallNode[],
+  nodes: Record<string, AnyNode>,
+): {
+  walls: WallNode[]
+  nodes: Record<string, AnyNode>
+  removed: AnyNodeId[]
+  reclaimed: WallNode[]
+} {
+  const reclaimed = walls.filter((wall) => readWallFacade(wall.metadata)?.detached)
+  if (!reclaimed.length) return { walls: [...walls], nodes, removed: [], reclaimed: [] }
+  const ids = new Set<string>(reclaimed.map((wall) => wall.id))
+  const removed = Object.values(nodes)
+    .filter((node) => ids.has(node.metadata[FACADE_RELEASED_KEY] as string))
+    .map((node) => node.id as AnyNodeId)
+  const gone = new Set<string>(removed)
+  const next: Record<string, AnyNode> = {}
+  for (const [id, node] of Object.entries(nodes)) {
+    if (gone.has(id)) continue
+    next[id] =
+      'children' in node && node.children.some((child) => gone.has(child))
+        ? ({ ...node, children: node.children.filter((child) => !gone.has(child)) } as AnyNode)
+        : node
+  }
+  const live = reclaimed.map((wall) => {
+    const { detached: _, detachedReason: __, ...config } = readWallFacade(wall.metadata)!
+    const updated = { ...(next[wall.id] as WallNode) }
+    updated.metadata = { ...updated.metadata, proceduralFacade: config }
+    next[wall.id] = updated
+    return updated
+  })
+  return {
+    walls: walls.map((wall) => (next[wall.id] as WallNode) ?? wall),
+    nodes: next,
+    removed,
+    reclaimed: live,
+  }
 }

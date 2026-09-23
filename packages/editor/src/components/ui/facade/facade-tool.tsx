@@ -2,6 +2,7 @@
 import { type AnyNode, type AnyNodeId, readWallFacade, useScene, type WallNode } from '@pascal-app/core'
 import { type FacadeScope, facadeScopeTargets } from '@pascal-app/core/building'
 import { useViewer } from '@pascal-app/viewer'
+import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { applyFacade, detachFacade, removeFacade } from '../../../lib/facade-fill'
 import { useFacadeTool } from '../../../store/use-facade-tool'
@@ -29,12 +30,20 @@ export function FacadeTool() {
   const nodes = useScene((s) => s.nodes)
   const readOnly = useScene((s) => s.readOnly)
   const [message, setMessage] = useState('')
+  const [applying, setApplying] = useState(false)
+  /** Walls in the target whose facade is detached: applying needs the user's go-ahead. */
+  const [detachedInTarget, setDetachedInTarget] = useState<{ count: number; reason?: string } | null>(
+    null,
+  )
 
   const wallIds = facadeWallIds(nodes, selectedIds)
   const live = wallIds
     .map((id) => readWallFacade(nodes[id as AnyNodeId]!.metadata))
     .filter((facade) => facade && !facade.detached)
-  const detached = wallIds.some((id) => readWallFacade(nodes[id as AnyNodeId]!.metadata)?.detached)
+  const detachedConfig = wallIds
+    .map((id) => readWallFacade(nodes[id as AnyNodeId]!.metadata))
+    .find((facade) => facade?.detached)
+  const detached = !!detachedConfig
   const run = (action: () => string) => {
     try {
       setMessage(action())
@@ -43,25 +52,66 @@ export function FacadeTool() {
     }
   }
 
-  const apply = () =>
-    run(() => {
-      const current = useScene.getState().nodes
-      if (!wallIds.length) throw Error('Select a wall first.')
-      const picked = current[wallIds[0] as AnyNodeId] as WallNode
-      const { walls, targets } =
+  /**
+   * Show progress until the viewer has rebuilt what the fill touched: planning
+   * takes a frame, the walls and openings appear over the next few.
+   */
+  const withProgress = (action: () => void) => {
+    setApplying(true)
+    const started = performance.now()
+    const settle = () => {
+      if (useScene.getState().dirtyNodes.size > 0 && performance.now() - started < 8000)
+        requestAnimationFrame(settle)
+      else setApplying(false)
+    }
+    // Two frames, so the spinner paints before the synchronous fill runs.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        try {
+          action()
+        } finally {
+          requestAnimationFrame(settle)
+        }
+      }),
+    )
+  }
+
+  const apply = (force = false) => {
+    const current = useScene.getState().nodes
+    if (!wallIds.length) return setMessage('Select a wall first.')
+    const picked = current[wallIds[0] as AnyNodeId] as WallNode
+    let target: ReturnType<typeof facadeScopeTargets>
+    try {
+      target =
         scope === 'wall'
           ? { walls: wallIds.map((id) => current[id as AnyNodeId] as WallNode), targets: {} }
           : facadeScopeTargets(current, picked, scope)
-      const result = applyFacade(
-        walls.map((wall) => wall.id),
-        unit,
-        { targets },
-      )
-      const skipped = result.skipped
-        ? ` ${result.skipped} ${result.skipped === 1 ? 'placement was' : 'placements were'} skipped to avoid overlaps or wall seams.`
-        : ''
-      return `Facade applied to ${result.walls} ${result.walls === 1 ? 'wall' : 'walls'}.${skipped}`
-    })
+    } catch (error) {
+      return setMessage(error instanceof Error ? error.message : 'Something went wrong.')
+    }
+    const { walls, targets } = target
+    const held = walls
+      .map((wall) => readWallFacade(wall.metadata))
+      .filter((facade) => facade?.detached)
+    if (held.length && !force) {
+      setMessage('')
+      return setDetachedInTarget({ count: held.length, reason: held[0]?.detachedReason })
+    }
+    setDetachedInTarget(null)
+    withProgress(() =>
+      run(() => {
+        const result = applyFacade(
+          walls.map((wall) => wall.id),
+          unit,
+          { targets, force },
+        )
+        const skipped = result.skipped
+          ? ` ${result.skipped} ${result.skipped === 1 ? 'placement was' : 'placements were'} skipped to avoid overlaps or wall seams.`
+          : ''
+        return `Facade applied to ${result.walls} ${result.walls === 1 ? 'wall' : 'walls'}.${skipped}`
+      }),
+    )
+  }
 
   return (
     <section className="flex min-w-0 flex-col gap-3 pb-3" aria-label="Facade tool">
@@ -95,9 +145,35 @@ export function FacadeTool() {
             { value: 'interior', label: 'Inside loop' },
           ]}
         />
-        <Button size="sm" className="text-xs" disabled={!wallIds.length} onClick={apply}>
-          {wallIds.length ? 'Apply facade' : 'Select a wall to apply'}
+        <Button
+          size="sm"
+          className="text-xs"
+          disabled={!wallIds.length || applying}
+          aria-busy={applying}
+          onClick={() => apply()}
+        >
+          {applying && <Loader2 className="size-3.5 animate-spin" />}
+          {applying ? 'Applying…' : wallIds.length ? 'Apply facade' : 'Select a wall to apply'}
         </Button>
+        {detachedInTarget && !applying && (
+          <div className="flex flex-col gap-2 rounded-lg border border-amber-500/40 p-2">
+            <p className="text-[11px] leading-4 text-muted-foreground">
+              {detachedInTarget.count === 1 ? 'One wall' : `${detachedInTarget.count} walls`} in this
+              target {detachedInTarget.count === 1 ? 'has' : 'have'} a detached facade
+              {detachedInTarget.reason ? ` (${detachedInTarget.reason.replace(/\.$/, '').toLowerCase()})` : ''}.
+              Applying anyway replaces what the facade generated there, edits included; elements
+              added by hand stay.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button size="sm" variant="outline" className="text-xs" onClick={() => setDetachedInTarget(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" className="text-xs" onClick={() => apply(true)}>
+                Apply anyway
+              </Button>
+            </div>
+          </div>
+        )}
       </fieldset>
 
       {(live.length > 0 || detached) && (
@@ -105,8 +181,26 @@ export function FacadeTool() {
           <span className="text-xs text-muted-foreground">
             {live.length
               ? `Selected ${live.length === 1 ? 'wall carries' : 'walls carry'} “${live[0]!.unit.name}”.`
-              : 'This facade was made editable and no longer regenerates.'}
+              : `This facade no longer regenerates: ${(detachedConfig?.detachedReason ?? 'it was made editable.').replace(/^./, (c) => c.toLowerCase())}`}
           </span>
+          {!live.length && detachedConfig && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs"
+              disabled={applying}
+              onClick={() =>
+                withProgress(() =>
+                  run(() => {
+                    applyFacade(wallIds, detachedConfig.unit, { force: true })
+                    return 'Facade restored; what it had generated was replaced.'
+                  }),
+                )
+              }
+            >
+              Restore facade
+            </Button>
+          )}
           {live.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
               <Button

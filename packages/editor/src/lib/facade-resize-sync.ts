@@ -137,7 +137,9 @@ export function subscribeFacadeResizes(report: (message: string) => void = () =>
     if (
       syncing ||
       isFacadeGeneration() ||
-      commit.origin === 'load' ||
+      // Loads and collaboration snapshots arrive already synced by whoever made them;
+      // replaying the sync on them reads their generated nodes as hand edits.
+      commit.origin !== 'local' ||
       !hasAuthoredRepetitionChange(commit) ||
       useScene.getState().readOnly
     )

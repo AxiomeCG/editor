@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   type AnyNode,
   type AnyNodeId,
+  applySceneSnapshot,
   DEFAULT_FACADE_UNIT,
   FacadeUnitSchema,
   LevelNode,
   readWallFacade,
   useScene,
   WallNode,
-  type WindowNode,
+  WindowNode,
 } from '@pascal-app/core'
 import { facadeScopeTargets } from '@pascal-app/core/building'
 import { applyFacade, detachFacade, removeFacade } from './facade-fill'
@@ -192,5 +193,58 @@ describe('subscribeFacadeResizes', () => {
     expect(config?.detachedReason).toBe('Window edited outside the facade.')
     expect(nodes()[edited.id]!.metadata.facadeOwner).toBeUndefined()
     expect((nodes()[edited.id] as WindowNode).width).toBe(1)
+  })
+
+  test('a collaboration snapshot is not a hand edit, so it never detaches', () => {
+    applyFacade([WALL_ID], unit)
+    unsubscribe = subscribeFacadeResizes()
+    const window = facadeWindows()[0]!
+    const state = useScene.getState()
+
+    applySceneSnapshot(
+      {
+        nodes: { ...state.nodes, [window.id]: { ...window, width: 1 } },
+        rootNodeIds: state.rootNodeIds,
+        collections: state.collections,
+        materials: state.materials,
+        installedPlugins: state.installedPlugins ?? [],
+      },
+      { origin: 'host' },
+    )
+
+    expect(readWallFacade(wall().metadata)?.detached).toBeFalsy()
+    expect(nodes()[window.id]!.metadata.facadeOwner).toBe(WALL_ID)
+  })
+})
+
+describe('forcing a detached facade', () => {
+  test('replaces what it had generated, keeps what was added by hand, and goes live again', () => {
+    applyFacade([WALL_ID], unit)
+    const generated = facadeWindows().length
+    unsubscribe = subscribeFacadeResizes()
+    useScene.getState().updateNode(facadeWindows()[0]!.id, { width: 0.5 })
+    expect(readWallFacade(wall().metadata)?.detached).toBe(true)
+    const byHand = WindowNode.parse({
+      parentId: WALL_ID,
+      wallId: WALL_ID,
+      position: [7.6, 1.5, 0],
+      width: 0.4,
+    })
+    useScene.getState().createNode(byHand, WALL_ID)
+
+    // A plain apply refuses the detached wall; forcing takes it back.
+    expect(() => applyFacade([WALL_ID], unit)).toThrow()
+    applyFacade([WALL_ID], unit, { force: true })
+
+    expect(readWallFacade(wall().metadata)?.detached).toBeFalsy()
+    expect(nodes()[byHand.id]).toBeDefined()
+    const windows = facadeWindows()
+    expect(windows.length).toBeGreaterThan(0)
+    expect(windows.length).toBeLessThanOrEqual(generated)
+    expect(windows.every((w) => w.width !== 0.5)).toBe(true)
+    const leftovers = Object.values(nodes()).filter(
+      (n) => n.metadata.facadeReleasedFrom === WALL_ID,
+    )
+    expect(leftovers).toHaveLength(0)
   })
 })
