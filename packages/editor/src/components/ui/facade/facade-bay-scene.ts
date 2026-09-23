@@ -28,7 +28,7 @@ import {
   Vector2,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { type FacadeScenario, STUDIO_WALL_THICKNESS, scenarioScene } from './facade-scenario'
+import { type FacadeScenario, STUDIO_WALL_THICKNESS, scenarioScene } from '@pascal-app/core/building'
 
 const RAIL = 0.04
 

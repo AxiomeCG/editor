@@ -11,7 +11,13 @@ import {
 } from '../schema'
 import { readWallFacade, type WallFacade } from '../systems/facade/facade-config'
 import { DEFAULT_FACADE_UNIT, FacadeUnitSchema } from '../systems/facade/facade-unit'
-import { type FacadeFillPlan, facadeLayoutFrame, planFacadeFill } from './facade'
+import {
+  type FacadeFillPlan,
+  type FacadeScenePatch,
+  facadeFillPatches,
+  facadeLayoutFrame,
+  planFacadeFill,
+} from './facade'
 import { facadeScopeTargets } from './facade-scope'
 
 const level = LevelNode.parse({ level: 0, height: 3 })
@@ -423,5 +429,61 @@ describe('opening styles', () => {
     expect(door!.doorType).toBe('french')
     expect(door!.leafCount).toBe(2)
     expect(door!.segments[0]!.type).toBe('glass')
+  })
+})
+
+describe('fill patches', () => {
+  /** A minimal store: what the MCP bridges and the editor do with the same patches. */
+  function applyPatches(nodes: Record<string, AnyNode>, patches: FacadeScenePatch[]) {
+    const next = { ...nodes }
+    for (const patch of patches) {
+      if (patch.op === 'delete') delete next[patch.id]
+      else if (patch.op === 'create') {
+        next[patch.node.id] = patch.node
+        const parent = patch.parentId && next[patch.parentId]
+        if (parent && 'children' in parent)
+          next[parent.id] = { ...parent, children: [...parent.children, patch.node.id] } as AnyNode
+      } else next[patch.id] = { ...next[patch.id]!, ...patch.data } as AnyNode
+    }
+    return next
+  }
+  const unit = FacadeUnitSchema.parse({
+    ...DEFAULT_FACADE_UNIT,
+    paint: { wall: 'library:flooring-rusticbrick' },
+    bays: [
+      {
+        ...DEFAULT_FACADE_UNIT.bays[0],
+        balcony: { depth: 1 },
+        spandrel: { material: 'library:preset-charcoal' },
+      },
+    ],
+  })
+
+  test('one batch creates the fill: removals, then creations, then updates', () => {
+    const wall = straightWall(10)
+    const nodes = scene(wall)
+    const plan = planFacadeFill({ walls: [wall], nodes, unit })
+    const patches = facadeFillPatches(plan, nodes)
+    const ops = patches.map((p) => p.op)
+
+    expect(ops.lastIndexOf('delete')).toBeLessThan(ops.indexOf('create'))
+    expect(ops.lastIndexOf('create')).toBeLessThan(ops.indexOf('update'))
+    const created = patches.flatMap((p) => (p.op === 'create' ? [p.node.type] : []))
+    expect(created.filter((type) => type === 'window')).toHaveLength(windowsOf(plan).length)
+    expect(created).toContain('panel')
+    expect(created).toContain('slab')
+    const wallUpdate = patches.find((p) => p.op === 'update' && p.id === wall.id)
+    expect(wallUpdate).toBeDefined()
+  })
+
+  test('re-applying the same unit produces no patches', () => {
+    const wall = straightWall(10)
+    let nodes = scene(wall)
+    nodes = applyPatches(
+      nodes,
+      facadeFillPatches(planFacadeFill({ walls: [wall], nodes, unit }), nodes),
+    )
+    const again = planFacadeFill({ walls: [nodes[wall.id] as WallNode], nodes, unit })
+    expect(facadeFillPatches(again, nodes)).toEqual([])
   })
 })

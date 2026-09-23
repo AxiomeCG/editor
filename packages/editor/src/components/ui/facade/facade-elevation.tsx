@@ -11,7 +11,7 @@ import {
 import { useId, useMemo, useRef } from 'react'
 import { cn } from '../../../lib/utils'
 import { materialSwatch } from './facade-material-field'
-import { type FacadeScenario, PARTITION_MARGIN, PARTITION_THICKNESS, scenarioRuns } from './facade-scenario'
+import { type FacadeScenario, PARTITION_MARGIN, PARTITION_THICKNESS, scenarioRuns } from '@pascal-app/core/building'
 
 const RAILING_HEIGHT = 1.1
 const SLAB_THICKNESS = 0.18

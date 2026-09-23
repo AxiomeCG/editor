@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_FACADE_UNIT } from '@pascal-app/core'
-import { planFacadeFill } from '@pascal-app/core/building'
+import { DEFAULT_FACADE_UNIT } from '../systems/facade/facade-unit'
+import { planFacadeFill } from './facade'
 import { nextPartition, PARTITION_THICKNESS, scenarioRuns, scenarioScene } from './facade-scenario'
 
 const half = PARTITION_THICKNESS / 2
@@ -20,7 +20,9 @@ describe('studio scenarios', () => {
   })
 
   test('an interior wall too close to a corner is left out', () => {
-    expect(scenarioScene({ width: 8, height: 3, partitions: [0.1, 7.95] }).partitions).toHaveLength(0)
+    expect(scenarioScene({ width: 8, height: 3, partitions: [0.1, 7.95] }).partitions).toHaveLength(
+      0,
+    )
   })
 
   test('the real planner restarts the unit in every room', () => {

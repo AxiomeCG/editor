@@ -20,7 +20,7 @@ import { FacadeBay3D } from './facade-bay-3d'
 import { FacadeElevation, resolveElevation, resolveScenario } from './facade-elevation'
 import { FacadeBayControls, newOpening } from './facade-bay-controls'
 import { MaterialField } from './facade-material-field'
-import { type FacadeScenario, nextPartition, SCENARIO_WIDTHS } from './facade-scenario'
+import { type FacadeScenario, nextPartition, SCENARIO_WIDTHS } from '@pascal-app/core/building'
 
 const NO_PARTITIONS: readonly number[] = []
 

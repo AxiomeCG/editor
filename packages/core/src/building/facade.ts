@@ -1,6 +1,7 @@
 import { getWallBaseElevationForNodes } from '../hooks/spatial-grid/spatial-grid-manager'
 import {
   type AnyNode,
+  type AnyNodeId,
   DoorNode,
   type FenceNode,
   FRENCH_DOOR_SEGMENTS,
@@ -25,6 +26,7 @@ import {
   resolveFacadeUnit,
 } from '../systems/facade/facade-unit'
 import { indexRepetitions, type RepetitionPlan, reconcileRepetitions } from '../utils/repetition'
+import { areSemanticValuesEqual } from '../utils/semantic-equal'
 import { facadeBalconyNodes } from './facade-balconies'
 import {
   type FacadeRun,
@@ -448,4 +450,46 @@ export function planFacadeFill({
   if (total > MAX_FACADE_OPENINGS)
     throw Error(`Fill fewer walls at once; this selection exceeds ${MAX_FACADE_OPENINGS} openings.`)
   return { walls: plans, runs, skipped }
+}
+
+export type FacadeScenePatch =
+  | { op: 'create'; node: AnyNode; parentId?: AnyNodeId }
+  | { op: 'update'; id: AnyNodeId; data: Partial<AnyNode> }
+  | { op: 'delete'; id: AnyNodeId; cascade?: boolean }
+
+/**
+ * A planned fill as one batch of scene patches: removals, then creations, then
+ * updates. Applied together they are one write, however many walls the fill
+ * covers — the editor's store and the MCP bridges both take this shape.
+ */
+export function facadeFillPatches(
+  plan: FacadeFillPlan,
+  nodes: Record<string, AnyNode>,
+): FacadeScenePatch[] {
+  const removals: FacadeScenePatch[] = []
+  const creations: FacadeScenePatch[] = []
+  const updates: FacadeScenePatch[] = []
+  for (const wallPlan of plan.walls) {
+    for (const repetition of [
+      wallPlan.openings,
+      wallPlan.balconies,
+      wallPlan.panels,
+    ] as RepetitionPlan<AnyNode>[]) {
+      for (const node of repetition.removed)
+        removals.push({ op: 'delete', id: node.id as AnyNodeId, cascade: true })
+      for (const node of repetition.added)
+        creations.push({
+          op: 'create',
+          // The store attaches descendants; pre-populated children would duplicate them.
+          node: ('children' in node ? { ...node, children: [] } : node) as AnyNode,
+          parentId: (node.parentId ?? undefined) as AnyNodeId | undefined,
+        })
+      for (const node of repetition.updated)
+        if (!areSemanticValuesEqual(nodes[node.id], node))
+          updates.push({ op: 'update', id: node.id as AnyNodeId, data: node })
+    }
+    if (wallPlan.wallUpdate)
+      updates.push({ op: 'update', id: wallPlan.wall.id as AnyNodeId, data: wallPlan.wallUpdate })
+  }
+  return [...removals, ...creations, ...updates]
 }

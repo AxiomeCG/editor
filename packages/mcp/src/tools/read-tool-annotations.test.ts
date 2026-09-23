@@ -32,6 +32,7 @@ const TOOL_POLICIES = [
       'list_templates',
       'list_units',
       'measure',
+      'preview_facade_unit',
       'search_assets',
       'validate_scene',
       'verify_scene',
@@ -77,6 +78,7 @@ const TOOL_POLICIES = [
       openWorldHint: false,
     },
     tools: [
+      'apply_facade',
       'apply_patch',
       'create_from_template',
       'create_house_from_brief',

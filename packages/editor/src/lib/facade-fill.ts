@@ -1,6 +1,5 @@
 import {
   type AnyNodeId,
-  applyNodeRepetition,
   type FacadeUnit,
   readWallFacade,
   releaseNodeRepetition,
@@ -11,6 +10,7 @@ import {
 import {
   FACADE_OWNERSHIP_KEYS,
   type FacadeWallTarget,
+  facadeFillPatches,
   planFacadeFill,
 } from '@pascal-app/core/building'
 
@@ -46,13 +46,19 @@ export function applyFacade(
   assertEditable()
   const walls = currentWalls(wallIds)
   return generate(() => {
-    const plan = planFacadeFill({ walls, nodes: useScene.getState().nodes, unit, ...options })
-    for (const wallPlan of plan.walls) {
-      applyNodeRepetition(wallPlan.openings, useScene.getState)
-      applyNodeRepetition(wallPlan.balconies, useScene.getState)
-      applyNodeRepetition(wallPlan.panels, useScene.getState)
-      if (wallPlan.wallUpdate) useScene.getState().updateNode(wallPlan.wall.id, wallPlan.wallUpdate)
-    }
+    const nodes = useScene.getState().nodes
+    const plan = planFacadeFill({ walls, nodes, unit, ...options })
+    // One store write per kind, however many walls: every write fans out to every scene subscriber.
+    const patches = facadeFillPatches(plan, nodes)
+    const scene = useScene.getState()
+    const removed = patches.flatMap((p) => (p.op === 'delete' ? [p.id] : []))
+    const created = patches.flatMap((p) =>
+      p.op === 'create' ? [{ node: p.node, parentId: p.parentId }] : [],
+    )
+    const updated = patches.flatMap((p) => (p.op === 'update' ? [{ id: p.id, data: p.data }] : []))
+    if (removed.length) scene.deleteNodes(removed)
+    if (created.length) scene.createNodes(created)
+    if (updated.length) scene.updateNodes(updated)
     return { walls: plan.walls.length, skipped: plan.skipped }
   })
 }

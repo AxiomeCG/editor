@@ -7,7 +7,7 @@ import { useEffect, useMemo } from 'react'
 import { WebGPURenderer } from 'three/webgpu'
 import { cn } from '../../../lib/utils'
 import { buildFacadeBayScene } from './facade-bay-scene'
-import type { FacadeScenario } from './facade-scenario'
+import type { FacadeScenario } from '@pascal-app/core/building'
 
 function FacadeBayContent({ unit, scenario }: { unit: FacadeUnit; scenario: FacadeScenario }) {
   const scene = useMemo(() => buildFacadeBayScene(unit, scenario), [unit, scenario])

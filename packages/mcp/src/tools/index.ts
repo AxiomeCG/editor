@@ -12,6 +12,7 @@ import { registerDescribeNode } from './describe-node'
 import { registerDuplicateLevel } from './duplicate-level'
 import { registerExportGlb } from './export-glb'
 import { registerExportJson } from './export-json'
+import { registerFacadeTools } from './facade'
 import { registerFindNodes } from './find-nodes'
 import { registerGetNode } from './get-node'
 import { registerGetScene } from './get-scene'
@@ -55,6 +56,7 @@ export function registerTools(server: McpServer, operations: SceneOperations): v
   registerCreateWall(server, operations)
   registerPlaceItem(server, operations)
   registerCutOpening(server, operations)
+  registerFacadeTools(server, operations)
   registerSetZone(server, operations)
   registerDuplicateLevel(server, operations)
   registerDeleteNode(server, operations)

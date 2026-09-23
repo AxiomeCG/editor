@@ -1,5 +1,5 @@
-import { type AnyNode, LevelNode, WallNode } from '@pascal-app/core'
-import { facadeRuns } from '@pascal-app/core/building'
+import { type AnyNode, LevelNode, WallNode } from '../schema'
+import { facadeRuns } from './facade-runs'
 
 /** The studio's test wall: thick enough for window reveals to read. */
 export const STUDIO_WALL_THICKNESS = 0.25

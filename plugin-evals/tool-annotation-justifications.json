@@ -59,6 +59,19 @@
       }
     },
     {
+      "name": "apply_facade",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "readOnlyHint": "It is not read-only because it creates windows, doors, panels and balconies on existing walls and repaints their filled face.",
+        "destructiveHint": "Re-applying replaces the nodes a previous facade generated and overwrites the wall paint the unit sets.",
+        "openWorldHint": "It operates on the connected Pascal scene without accessing the public internet."
+      }
+    },
+    {
       "name": "apply_patch",
       "annotations": {
         "readOnlyHint": false,
@@ -524,6 +537,19 @@
         "readOnlyHint": "It is not read-only because adds an item at the requested pose in the connected Pascal scene.",
         "destructiveHint": "Its intended operation adds new modeled state without deleting or replacing existing Pascal scene or project state.",
         "openWorldHint": "It operates on the connected Pascal scene, project, and configured catalog data without accessing the public internet."
+      }
+    },
+    {
+      "name": "preview_facade_unit",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "readOnlyHint": "It resolves a facade unit on synthetic test walls and returns the layout without reading or changing any scene.",
+        "destructiveHint": "It does not create, update, replace, delete, load, or save Pascal scene or project state.",
+        "openWorldHint": "It computes only from the unit supplied in the call and does not access the public internet."
       }
     },
     {
