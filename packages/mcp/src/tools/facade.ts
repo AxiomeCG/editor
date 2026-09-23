@@ -159,6 +159,12 @@ const applyInput = {
       '`wall`: this wall only. `exterior` / `interior`: the whole outside or inside loop of walls this wall belongs to, on its level. `both`: both faces of the loop.',
     ),
   unit: FacadeUnitSchema.describe(UNIT_DESCRIPTION),
+  replaceExisting: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Remove existing windows and doors the facade openings would overlap (e.g. an old facade, imported openings) instead of skipping those placements.',
+    ),
 }
 
 const applyOutput = {
@@ -167,6 +173,7 @@ const applyOutput = {
   created: z.number(),
   updated: z.number(),
   removed: z.number(),
+  replaced: z.number(),
   skipped: z.number(),
   ...liveSyncOutput,
 }
@@ -205,7 +212,7 @@ export function registerFacadeTools(server: McpServer, bridge: SceneOperations):
       outputSchema: applyOutput,
       annotations: DESTRUCTIVE_TOOL_ANNOTATIONS,
     },
-    async ({ wallId, scope, unit }) => {
+    async ({ wallId, scope, unit, replaceExisting }) => {
       const nodes = bridge.getNodes() as Record<string, AnyNode>
       const wall = nodes[wallId]
       if (!wall) throwMcpError(ErrorCode.InvalidParams, `Wall not found: ${wallId}`)
@@ -220,7 +227,7 @@ export function registerFacadeTools(server: McpServer, bridge: SceneOperations):
           wall as WallNode,
           scope,
         )
-        plan = planFacadeFill({ walls, nodes, unit, targets })
+        plan = planFacadeFill({ walls, nodes, unit, targets, replaceExisting })
         patches = facadeFillPatches(plan, nodes)
       } catch (error) {
         throwMcpError(
@@ -237,6 +244,7 @@ export function registerFacadeTools(server: McpServer, bridge: SceneOperations):
         created: count('create'),
         updated: count('update'),
         removed: count('delete'),
+        replaced: plan.displaced.length,
         skipped: plan.skipped,
         ...persistencePayload(persistence),
       }

@@ -68,7 +68,7 @@ describe('planFacadeFill', () => {
     const windows = windowsOf(plan) as WindowNode[]
 
     // 7.6 m between margins fits three 1.4 m windows at a 1 m pier, centred.
-    expect(windows.map((w) => w.position[0])).toEqual(
+    expect(windows.map((w) => w.position[0]).sort((a, b) => a - b)).toEqual(
       [1.6, 4, 6.4].map((x) => expect.closeTo(x, 6)),
     )
     for (const window of windows) {
@@ -531,5 +531,65 @@ describe('forcing a detached facade back', () => {
     const wall = straightWall(8)
     const nodes = scene(wall)
     expect(reclaimDetachedFacades([wall], nodes)).toMatchObject({ removed: [], reclaimed: [] })
+  })
+})
+
+describe('facing the facade', () => {
+  const pinnedLeft = FacadeUnitSchema.parse({
+    name: 'Door at the left',
+    bays: [
+      {
+        key: 'door',
+        width: 1.2,
+        widthMode: 'fixed',
+        horizontal: 'left',
+        offsetX: 0.4,
+        opening: { kind: 'door', width: 1, height: 2.1 },
+      },
+    ],
+  })
+  /** The door's centre, in plan x, for a wall from x 0 to 10 along z 0. */
+  const doorX = (extra: Partial<WallNode>) => {
+    const wall = straightWall(10, extra)
+    const plan = planFacadeFill({ walls: [wall], nodes: scene(wall), unit: pinnedLeft })
+    const door = plan.walls[0]!.openings.values[0]!
+    return door.position[0]
+  }
+
+  test('a bay pinned left is at the left for someone facing the filled face, whichever side it is', () => {
+    // Exterior on the back (-z): standing outside, looking toward +z, left is +x.
+    expect(doorX({ frontSide: 'interior', backSide: 'exterior' })).toBeCloseTo(10 - 0.4 - 0.6, 9)
+    // Exterior on the front (+z): standing outside, looking toward -z, left is -x.
+    expect(doorX({ frontSide: 'exterior', backSide: 'interior' })).toBeCloseTo(0.4 + 0.6, 9)
+  })
+})
+
+describe('replacing existing openings', () => {
+  test('existing windows in the way are replaced instead of skipping the fill', () => {
+    const base = straightWall(8)
+    const oldWindows = [2, 4, 6].map((x) =>
+      WindowNode.parse({ parentId: base.id, wallId: base.id, position: [x, 1.6, 0], width: 1 }),
+    )
+    const wall = { ...base, children: oldWindows.map((w) => w.id) } as WallNode
+    const nodes = scene(wall, ...oldWindows)
+
+    const blocked = planFacadeFill({ walls: [wall], nodes, unit: DEFAULT_FACADE_UNIT })
+    expect(blocked.displaced).toEqual([])
+    expect(windowsOf(blocked).length).toBeLessThan(3)
+
+    const replaced = planFacadeFill({
+      walls: [wall],
+      nodes,
+      unit: DEFAULT_FACADE_UNIT,
+      replaceExisting: true,
+    })
+    expect(windowsOf(replaced)).toHaveLength(3)
+    expect(replaced.displaced.map((node) => node.id).sort()).toEqual(
+      oldWindows.map((w) => w.id).sort(),
+    )
+    const deletes = facadeFillPatches(replaced, nodes).filter((p) => p.op === 'delete')
+    expect(deletes.map((p) => (p as { id: string }).id).sort()).toEqual(
+      oldWindows.map((w) => w.id).sort(),
+    )
   })
 })

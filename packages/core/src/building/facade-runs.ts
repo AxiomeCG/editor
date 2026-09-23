@@ -184,8 +184,12 @@ export function facadeRuns(
   for (const chain of facadeChains(targets)) {
     const first = chain[0]!
     const origin = first.wall.start
-    const direction = unit(sub(first.wall.end, first.wall.start))
     const normal = facadeFaceNormal(first.wall, first.face)
+    // Runs read left to right for someone facing the filled face, as the unit is
+    // designed in the studio: a wall's start → end does that for its front face,
+    // and runs the other way for its back.
+    const along = unit(sub(first.wall.end, first.wall.start))
+    const direction: Point = first.face === 'front' ? along : [-along[0], -along[1]]
     const walls: FacadeRunWall[] = chain.map(({ wall }) => {
       const a = dot(sub(wall.start, origin), direction)
       const b = dot(sub(wall.end, origin), direction)

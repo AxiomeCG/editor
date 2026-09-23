@@ -54,7 +54,13 @@ export type FacadeWallPlan = {
   /** Null when the wall already carries this exact facade. */
   wallUpdate: Pick<WallNode, 'slots' | 'metadata'> | null
 }
-export type FacadeFillPlan = { walls: FacadeWallPlan[]; runs: FacadeRun[]; skipped: number }
+export type FacadeFillPlan = {
+  walls: FacadeWallPlan[]
+  runs: FacadeRun[]
+  skipped: number
+  /** Openings already on the walls that the fill's openings would overlap, with `replaceExisting`. */
+  displaced: FacadeOpeningNode[]
+}
 
 /** Why a facade cannot be generated on this wall, as a sentence for the panel. */
 export function facadeWallIssue(wall: WallNode, nodes: Record<string, AnyNode>): string | null {
@@ -244,11 +250,17 @@ export function planFacadeFill({
   unit: input,
   targets = {},
   sourceItemId,
+  replaceExisting = false,
 }: {
   walls: readonly WallNode[]
   nodes: Record<string, AnyNode>
   unit: FacadeUnit
   targets?: Record<string, FacadeWallTarget>
+  /**
+   * Existing openings no longer hold the unit back: those its openings would
+   * overlap are reported in `displaced`, to be removed with the fill.
+   */
+  replaceExisting?: boolean
   sourceItemId?: string
 }): FacadeFillPlan {
   if (!walls.length) throw Error('Select a wall before applying a facade.')
@@ -299,16 +311,20 @@ export function planFacadeFill({
   const push = <T>(map: Map<string, T[]>, key: string, values: T[]) =>
     map.set(key, [...(map.get(key) ?? []), ...values])
   let skipped = 0
+  const displaced = new Map<string, FacadeOpeningNode>()
 
   for (const run of runs) {
-    // Openings placed by hand stay put; the unit flows around them.
-    const obstacles: FacadeUnitObstacle[] = run.walls.flatMap((w) =>
+    // Openings placed by hand stay put and the unit flows around them — unless it replaces them.
+    const existing = run.walls.flatMap((w) =>
       children(w.wall)
-        .filter((node) => isOpening(node) && node.metadata.facadeOwner !== w.wall.id)
-        .map((node) => {
-          const opening = node as FacadeOpeningNode
+        .filter(
+          (node): node is FacadeOpeningNode =>
+            isOpening(node) && node.metadata.facadeOwner !== w.wall.id,
+        )
+        .map((opening) => {
           const along = w.reversed ? w.to - opening.position[0] : w.from + opening.position[0]
           return {
+            node: opening,
             left: along - opening.width / 2 - run.start,
             right: along + opening.width / 2 - run.start,
             bottom: opening.position[1] - opening.height / 2,
@@ -316,12 +332,24 @@ export function planFacadeFill({
           }
         }),
     )
+    const obstacles: FacadeUnitObstacle[] = replaceExisting ? [] : existing
     const resolved = resolveFacadeUnit(
       unit,
       { width: run.end - run.start, height: run.height },
       obstacles,
     )
     skipped += resolved.skipped
+    if (replaceExisting)
+      for (const { opening } of resolved.placements)
+        for (const old of existing)
+          if (
+            opening &&
+            opening.left < old.right &&
+            opening.right > old.left &&
+            opening.bottom < old.top &&
+            opening.top > old.bottom
+          )
+            displaced.set(old.node.id, old.node)
     for (const placement of resolved.placements) {
       if (placement.opening) {
         const left = run.start + placement.opening.left
@@ -451,7 +479,7 @@ export function planFacadeFill({
   const total = plans.reduce((sum, plan) => sum + plan.openings.values.length, 0)
   if (total > MAX_FACADE_OPENINGS)
     throw Error(`Fill fewer walls at once; this selection exceeds ${MAX_FACADE_OPENINGS} openings.`)
-  return { walls: plans, runs, skipped }
+  return { walls: plans, runs, skipped, displaced: [...displaced.values()] }
 }
 
 export type FacadeScenePatch =
@@ -468,7 +496,11 @@ export function facadeFillPatches(
   plan: FacadeFillPlan,
   nodes: Record<string, AnyNode>,
 ): FacadeScenePatch[] {
-  const removals: FacadeScenePatch[] = []
+  const removals: FacadeScenePatch[] = plan.displaced.map((node) => ({
+    op: 'delete' as const,
+    id: node.id as AnyNodeId,
+    cascade: true,
+  }))
   const creations: FacadeScenePatch[] = []
   const updates: FacadeScenePatch[] = []
   for (const wallPlan of plan.walls) {

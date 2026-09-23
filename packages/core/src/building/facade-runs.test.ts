@@ -59,7 +59,13 @@ describe('facadeRuns', () => {
     const runs = facadeRuns(nodes, loopTargets(nodes, walls[0]!, 'exterior'))
     const bottom = runs.filter((run) => run.walls.some((w) => w.wall.id === walls[0]!.id))
 
-    expect(bottom.map((run) => [run.start, run.end])).toEqual([
+    // In plan x: the runs sit either side of the partition's 0.1 m thickness.
+    const planX = (run: (typeof bottom)[number], along: number) =>
+      run.origin[0] + run.direction[0] * along
+    const extents = bottom
+      .map((run) => [planX(run, run.start), planX(run, run.end)].sort((a, b) => a - b))
+      .sort((a, b) => a[0]! - b[0]!)
+    expect(extents).toEqual([
       [expect.closeTo(-0.05, 6), expect.closeTo(3.95, 6)],
       [expect.closeTo(4.05, 6), expect.closeTo(8.05, 6)],
     ])

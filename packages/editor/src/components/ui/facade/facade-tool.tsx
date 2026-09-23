@@ -1,6 +1,6 @@
 'use client'
-import { type AnyNodeId, readWallFacade, useScene } from '@pascal-app/core'
-import type { FacadeScope } from '@pascal-app/core/building'
+import { type AnyNodeId, readWallFacade, useScene, type WallNode } from '@pascal-app/core'
+import { type FacadeScope, planFacadeFill } from '@pascal-app/core/building'
 import { useViewer } from '@pascal-app/viewer'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -66,7 +66,10 @@ export function FacadeTool() {
     )
   }
 
-  const apply = (force = false) => {
+  /** Existing openings in the way of the last apply, which it can replace instead. */
+  const [inTheWay, setInTheWay] = useState<{ count: number; force: boolean } | null>(null)
+
+  const apply = (force = false, replaceExisting = false) => {
     const current = useScene.getState().nodes
     if (!wallIds.length) return setMessage('Select a wall first.')
     let target: ReturnType<typeof facadeApplyTargets>
@@ -84,17 +87,28 @@ export function FacadeTool() {
       return setDetachedInTarget({ count: held.length, reason: held[0]?.detachedReason })
     }
     setDetachedInTarget(null)
+    setInTheWay(null)
     withProgress(() =>
       run(() => {
         const result = applyFacade(
           walls.map((wall) => wall.id),
           unit,
-          { targets, force },
+          { targets, force, replaceExisting },
         )
+        // Skipped placements may be existing windows in the way: count them with a dry plan.
+        if (result.skipped && !replaceExisting) {
+          const nodes = useScene.getState().nodes
+          const current = walls.map((wall) => nodes[wall.id as AnyNodeId] as WallNode)
+          const dry = planFacadeFill({ walls: current, nodes, unit, targets, replaceExisting: true })
+          if (dry.displaced.length) setInTheWay({ count: dry.displaced.length, force })
+        }
+        const replaced = result.replaced
+          ? ` ${result.replaced} existing ${result.replaced === 1 ? 'opening was' : 'openings were'} replaced.`
+          : ''
         const skipped = result.skipped
           ? ` ${result.skipped} ${result.skipped === 1 ? 'placement was' : 'placements were'} skipped to avoid overlaps or wall seams.`
           : ''
-        return `Facade applied to ${result.walls} ${result.walls === 1 ? 'wall' : 'walls'}.${skipped}`
+        return `Facade applied to ${result.walls} ${result.walls === 1 ? 'wall' : 'walls'}.${replaced}${skipped}`
       }),
     )
   }
@@ -255,6 +269,18 @@ export function FacadeTool() {
         <p role="status" className="px-2 text-xs text-muted-foreground">
           {message}
         </p>
+      )}
+      {inTheWay && !applying && (
+        <div className="mx-2 flex flex-col gap-2 rounded-lg border border-amber-500/40 p-2">
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            {inTheWay.count === 1 ? 'One existing opening is' : `${inTheWay.count} existing openings are`}{' '}
+            in the way of this facade. Replacing them lets every bay take its place; openings
+            elsewhere stay.
+          </p>
+          <Button size="sm" className="text-xs" onClick={() => apply(inTheWay.force, true)}>
+            Replace {inTheWay.count === 1 ? 'it' : `${inTheWay.count} openings`}
+          </Button>
+        </div>
       )}
     </section>
   )

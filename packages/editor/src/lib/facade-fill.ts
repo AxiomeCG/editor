@@ -48,7 +48,13 @@ export function applyFacade(
   {
     force = false,
     ...options
-  }: { targets?: Record<string, FacadeWallTarget>; sourceItemId?: string; force?: boolean } = {},
+  }: {
+    targets?: Record<string, FacadeWallTarget>
+    sourceItemId?: string
+    force?: boolean
+    /** Remove the existing openings the fill's openings overlap, rather than flowing around them. */
+    replaceExisting?: boolean
+  } = {},
 ) {
   assertEditable()
   return generate(() => {
@@ -80,7 +86,7 @@ export function applyFacade(
     if (removed.length) scene.deleteNodes(removed)
     if (created.length) scene.createNodes(created)
     if (updated.length) scene.updateNodes(updated)
-    return { walls: plan.walls.length, skipped: plan.skipped }
+    return { walls: plan.walls.length, skipped: plan.skipped, replaced: plan.displaced.length }
   })
 }
 
