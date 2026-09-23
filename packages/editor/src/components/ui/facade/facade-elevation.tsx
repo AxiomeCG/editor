@@ -8,10 +8,12 @@ import {
   type FacadeUnitResolution,
   resolveFacadeUnit,
 } from '@pascal-app/core'
+import { Link2, Unlink2 } from 'lucide-react'
 import { AnimatePresence, motion, type Transition, useReducedMotion } from 'motion/react'
 import { useEffect, useId, useMemo, useRef } from 'react'
 import { cn } from '../../../lib/utils'
 import { bayColor } from './facade-bay-colors'
+import { balconyLinks } from './facade-balcony-links'
 import { type InsertionSlot, insertionSlots } from './facade-insertion'
 import { InsertionMagnet } from './facade-insertion-magnet'
 import { materialSwatch } from './facade-material-field'
@@ -91,6 +93,8 @@ export function FacadeElevation({
   onHoverBay,
   onBayChange,
   onInsertBay,
+  onBaysChange,
+  onPreviewBays,
   preview = null,
   onResize,
   compact = false,
@@ -111,6 +115,10 @@ export function FacadeElevation({
   onBayChange?: (bay: FacadeBay) => void
   /** Offers a magnetic "+" wherever a bay can be added. */
   onInsertBay?: (slot: InsertionSlot) => void
+  /** Offers links between neighbouring balconies around the selected bay. */
+  onBaysChange?: (bays: FacadeBay[]) => void
+  /** A hovered link's result, to preview; null when the pointer leaves. */
+  onPreviewBays?: (bays: FacadeBay[] | null) => void
   /**
    * The unit as a hovered choice would make it. It is drawn instead of `unit`,
    * everything gliding to where it would be and back when the preview ends —
@@ -132,6 +140,14 @@ export function FacadeElevation({
     [preview, unit, scenario],
   )
   const { runs } = resolution
+  // Links sit on the committed facade, so previewing one never moves it from under the cursor.
+  const links = useMemo(
+    () =>
+      onBaysChange && !compact
+        ? balconyLinks(unit, committed ?? resolution.placements, selectedBay)
+        : [],
+    [onBaysChange, compact, unit, committed, resolution.placements, selectedBay],
+  )
   // Glide only when a preview starts, changes or ends; edits (a slider drag) stay instant.
   const reduced = useReducedMotion()
   const lastPreview = useRef(preview)
@@ -304,6 +320,38 @@ export function FacadeElevation({
               <title>{unit.bays.find((m) => m.key === placement.bay)?.name ?? placement.bay}</title>
             </rect>
           ))}
+
+        {links.map((link) => (
+          <g
+            key={link.key}
+            role="button"
+            data-balcony-link=""
+            aria-label={link.joined ? 'Split the balcony between these bays' : 'Join these bays with one balcony'}
+            className="cursor-pointer"
+            onPointerEnter={() => onPreviewBays?.(link.bays)}
+            onPointerLeave={() => onPreviewBays?.(null)}
+            onClick={() => onBaysChange?.(link.bays)}
+          >
+            <title>
+              {link.joined
+                ? 'Split: each bay gets its own balcony again'
+                : 'Join: one continuous balcony across both bays'}
+            </title>
+            <circle
+              cx={link.x}
+              cy={height - 0.55}
+              r={0.17}
+              className={link.joined ? 'fill-foreground' : 'fill-background stroke-foreground'}
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+            />
+            {link.joined ? (
+              <Unlink2 x={link.x - 0.1} y={height - 0.65} width={0.2} height={0.2} className="text-background" />
+            ) : (
+              <Link2 x={link.x - 0.1} y={height - 0.65} width={0.2} height={0.2} className="text-foreground" />
+            )}
+          </g>
+        ))}
 
         {partitions.map((x, index) => (
           <Partition

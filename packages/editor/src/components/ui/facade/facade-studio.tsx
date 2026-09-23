@@ -81,24 +81,26 @@ export function FacadeStudio() {
   const [error, setError] = useState('')
   // A hovered choice in the side panel, shown as a phantom in both views. Hover intent:
   // it only appears once the pointer rests, so sweeping across the panel stays quiet.
-  const [previewBay, setPreviewBay] = useState<FacadeBay | null>(null)
+  const [previewBays, setPreviewBays] = useState<readonly FacadeBay[] | null>(null)
   const intent = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const previewChoice = (next: FacadeBay | null) => {
+  const previewChoice = (next: FacadeBay | readonly FacadeBay[] | null) => {
     clearTimeout(intent.current)
-    if (!next) return setPreviewBay(null)
-    intent.current = setTimeout(() => setPreviewBay(next), 120)
+    if (!next) return setPreviewBays(null)
+    const bays = Array.isArray(next) ? next : [next as FacadeBay]
+    intent.current = setTimeout(() => setPreviewBays(bays), 120)
   }
   useEffect(() => () => clearTimeout(intent.current), [])
   // Choosing commits the draft; the phantom of what was hovered has done its job.
   useEffect(() => {
     void draft
-    setPreviewBay(null)
+    setPreviewBays(null)
   }, [draft])
   const previewUnit = useMemo(() => {
-    if (!draft || !previewBay) return null
-    const unit = { ...draft, bays: draft.bays.map((b) => (b.key === previewBay.key ? previewBay : b)) }
+    if (!draft || !previewBays) return null
+    const byKey = new Map(previewBays.map((bay) => [bay.key, bay]))
+    const unit = { ...draft, bays: draft.bays.map((b) => byKey.get(b.key) ?? b) }
     return JSON.stringify(unit) === JSON.stringify(draft) ? null : unit
-  }, [draft, previewBay])
+  }, [draft, previewBays])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -275,6 +277,11 @@ export function FacadeStudio() {
             onHoverBay={setHoveredBay}
             onBayChange={replace}
             onInsertBay={(slot) => addBay(slot.side, slot.index)}
+            onBaysChange={(changed) => {
+              const byKey = new Map(changed.map((bay) => [bay.key, bay]))
+              update({ bays: bays.map((b) => byKey.get(b.key) ?? b) })
+            }}
+            onPreviewBays={previewChoice}
             preview={previewUnit}
             onSelectBay={selectBay}
             onResize={(width) => setTestSize({ width })}

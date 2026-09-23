@@ -82,7 +82,7 @@ export function InsertionMagnet({
         !drawing ||
         !matrix ||
         event.buttons ||
-        (event.target as Element | null)?.closest?.('.cursor-ew-resize')
+        (event.target as Element | null)?.closest?.('.cursor-ew-resize, [data-balcony-link]')
       )
         return sleep()
       const cursor = drawing.createSVGPoint()
