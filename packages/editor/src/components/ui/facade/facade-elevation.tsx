@@ -86,6 +86,7 @@ export function FacadeElevation({
   hoveredBay = null,
   onSelectBay,
   onHoverBay,
+  onBayChange,
   onResize,
   compact = false,
   className,
@@ -101,6 +102,8 @@ export function FacadeElevation({
   hoveredBay?: string | null
   onSelectBay?: (key: string) => void
   onHoverBay?: (key: string | null) => void
+  /** Makes the selected bay's children draggable: opening, panels and, when locked, its width. */
+  onBayChange?: (bay: FacadeBay) => void
   onResize?: (width: number) => void
   compact?: boolean
   className?: string
@@ -297,6 +300,17 @@ export function FacadeElevation({
           </>
         )}
 
+        {onBayChange && !compact && selected[0] && (
+          <BayHandles
+            bay={unit.bays.find((b) => b.key === selectedBay)!}
+            placement={selected[0]}
+            height={height}
+            color={bayColor(unit, selected[0].bay)}
+            toRun={toRun}
+            onChange={onBayChange}
+          />
+        )}
+
         {onResize && (
           <g
             className="cursor-ew-resize"
@@ -324,6 +338,140 @@ export function FacadeElevation({
         </p>
       )}
     </div>
+  )
+}
+
+const snap = (value: number) => Math.round(value * 20) / 20
+const MIN_OPENING = 0.3
+const MIN_PANEL = 0.05
+
+/**
+ * Handles on the selected bay's first placement, with each child's width read
+ * out above the wall. Dragging edits the unit as the flex model reads it: in a
+ * bay that hugs its content a wider panel or opening pushes the bay; in a
+ * locked bay the opening stays centred and the panels fill what is left.
+ */
+function BayHandles({
+  bay,
+  placement,
+  height,
+  color,
+  toRun,
+  onChange,
+}: {
+  bay: FacadeBay
+  placement: FacadeBayPlacement
+  height: number
+  color: string
+  toRun: (clientX: number) => number | null
+  onChange: (bay: FacadeBay) => void
+}) {
+  const hugs = bay.fit === 'content'
+  const { opening } = placement
+  // The drag in progress: where it started and how to turn a delta into a bay,
+  // captured at pointer-down so each step measures from the start, not the last step.
+  const drag = useRef<{ from: number; apply: (delta: number) => FacadeBay | null } | null>(null)
+  const rects = bayCladdingRects(bay, placement, height)
+  const panel = (part: string) => rects.find((rect) => rect.part === part)
+  const infillLeft = panel('infill-left')
+  const infillRight = panel('infill-right')
+  const handleY = opening ? (opening.bottom + opening.top) / 2 : height / 2
+
+  /** A draggable edge: `apply` gets how far the pointer moved, in metres. */
+  const edge = (key: string, x: number, title: string, apply: (delta: number) => FacadeBay | null) => (
+    <g
+      key={key}
+      className="cursor-ew-resize"
+      onPointerDown={(event) => {
+        const from = toRun(event.clientX)
+        if (from === null) return
+        event.stopPropagation()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        drag.current = { from, apply }
+      }}
+      onPointerMove={(event) => {
+        const at = toRun(event.clientX)
+        if (!drag.current || at === null) return
+        const next = drag.current.apply(at - drag.current.from)
+        if (next) onChange(next)
+      }}
+      onPointerUp={() => {
+        drag.current = null
+      }}
+    >
+      <rect
+        x={x - 0.05}
+        y={height - handleY - 0.3}
+        width={0.1}
+        height={0.6}
+        rx={0.05}
+        fill={color}
+        stroke="#0a0a0a"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+      <rect x={x - 0.15} y={0} width={0.3} height={height} fill="transparent">
+        <title>{title}</title>
+      </rect>
+    </g>
+  )
+
+  const widthOf = (from: number, to: number) => to - from
+  // Dragging starts from the unit as it was when the pointer went down.
+  const base = bay
+  const openingWidth = opening ? widthOf(opening.left, opening.right) : 0
+  const centred = !hugs && bay.opening?.widthMode === 'fixed'
+  const withOpening = (width: number): FacadeBay | null =>
+    base.opening ? { ...base, opening: { ...base.opening, width: Math.max(MIN_OPENING, snap(width)) } } : null
+  const withPanel = (width: number): FacadeBay | null =>
+    base.infill ? { ...base, infill: { ...base.infill, width: Math.max(MIN_PANEL, snap(width)) } } : null
+
+  const labels = [
+    infillLeft && { key: 'l', from: infillLeft.left, to: infillLeft.right },
+    opening && { key: 'o', from: opening.left, to: opening.right },
+    infillRight && { key: 'r', from: infillRight.left, to: infillRight.right },
+  ].filter((label): label is { key: string; from: number; to: number } => !!label)
+
+  return (
+    <g>
+      {labels.map((label) => (
+        <text
+          key={label.key}
+          x={(label.from + label.to) / 2}
+          y={-0.12}
+          textAnchor="middle"
+          fontSize={0.15}
+          fill={color}
+          className="pointer-events-none font-mono"
+        >
+          {(label.to - label.from).toFixed(2)}
+        </text>
+      ))}
+      {opening &&
+        bay.opening?.widthMode === 'fixed' && [
+          edge('opening-left', opening.left, 'Drag to resize the opening', (d) =>
+            withOpening(openingWidth - d * (centred ? 2 : 1)),
+          ),
+          edge('opening-right', opening.right, 'Drag to resize the opening', (d) =>
+            withOpening(openingWidth + d * (centred ? 2 : 1)),
+          ),
+        ]}
+      {infillLeft &&
+        edge('infill-left', infillLeft.left, 'Drag to resize the panel', (d) =>
+          withPanel(widthOf(infillLeft.left, infillLeft.right) - d),
+        )}
+      {infillRight &&
+        edge('infill-right', infillRight.right, 'Drag to resize the panel', (d) =>
+          withPanel(widthOf(infillRight.left, infillRight.right) + d),
+        )}
+      {!hugs &&
+        bay.widthMode !== 'stretch' &&
+        !infillRight &&
+        edge('bay-right', placement.right, 'Drag to resize the bay', (d) => ({
+          ...base,
+          width: Math.max(MIN_OPENING, snap(placement.right - placement.left + d)),
+        }))}
+    </g>
   )
 }
 

@@ -121,6 +121,12 @@ export const FacadeBaySchema = z.object({
   pier: z.number().finite().nonnegative().default(1),
   /** Where a repeat puts the space its bays do not use. */
   remainder: z.enum(['center', 'widen-piers', 'align-to-anchor']).default('center'),
+  /**
+   * `locked`: the bay is `width` wide and its infill fills beside the opening.
+   * `content`: the bay hugs its children like CSS `fit-content` — infill, opening,
+   * infill laid side by side — so a wider panel pushes the bay and the run re-flows.
+   */
+  fit: z.enum(['locked', 'content']).default('locked'),
   opening: FacadeBayOpeningSchema.optional(),
   balcony: FacadeBayBalconySchema.optional(),
   /** Beside the opening, floor to ceiling; the whole bay when it has no opening. */
@@ -129,6 +135,27 @@ export const FacadeBaySchema = z.object({
   spandrel: FacadeSpandrelSchema.optional(),
 })
 export type FacadeBay = z.infer<typeof FacadeBaySchema>
+
+/** Infill beside each side of the opening, in metres, when the bay hugs its content. */
+function hugSides(bay: FacadeBay): { left: number; right: number } | null {
+  if (bay.fit !== 'content' || bay.widthMode === 'stretch') return null
+  if (bay.opening && bay.opening.widthMode !== 'fixed') return null
+  const { infill } = bay
+  const side = (which: 'left' | 'right') =>
+    infill && infill.sides !== (which === 'left' ? 'right' : 'left') ? (infill.width ?? 0) : 0
+  return { left: side('left'), right: side('right') }
+}
+
+/**
+ * The width a bay takes in its run: its own `width` when locked, or the sum of
+ * its children when it hugs them.
+ */
+export function bayWidth(bay: FacadeBay): number {
+  const sides = hugSides(bay)
+  if (!sides) return bay.width
+  const content = sides.left + (bay.opening?.width ?? 0) + sides.right
+  return content > 0 ? content : bay.width
+}
 export type FacadeUnitHorizontalAnchor = FacadeBay['horizontal']
 export type FacadeUnitVerticalAnchor = FacadeBayOpening['vertical']
 export type FacadeUnitWidthMode = FacadeBay['widthMode']
@@ -235,7 +262,8 @@ export function resolveFacadeUnit(
     index: number,
   ): FacadeBayPlacement | null => {
     const { opening } = bay
-    const placedOpening = opening && vertical ? openingIn(span, opening, vertical) : undefined
+    const placedOpening =
+      opening && vertical ? openingIn(span, opening, vertical, hugSides(bay)?.left) : undefined
     if (opening && !placedOpening) return null
     // A continuous balcony is laid once every bay has its place (below).
     const balcony =
@@ -290,9 +318,9 @@ export function resolveFacadeUnit(
     if (bay.opening && !vertical) continue
     const span =
       bay.horizontal === 'left'
-        ? { left: leftEdge + bay.offsetX, width: bay.width }
+        ? { left: leftEdge + bay.offsetX, width: bayWidth(bay) }
         : bay.horizontal === 'right'
-          ? { left: rightEdge - bay.offsetX - bay.width, width: bay.width }
+          ? { left: rightEdge - bay.offsetX - bayWidth(bay), width: bayWidth(bay) }
           : resolveSpans(bay, run.width, maxRepeat)[0]
     if (!span || span.left < -1e-9 || span.left + span.width > run.width + 1e-9) {
       skipped++
@@ -353,20 +381,22 @@ function resolveSpans(bay: FacadeBay, runWidth: number, maxRepeat: number): Span
     return width < FACADE_UNIT_MIN_OPENING ? [] : [{ left: bay.offsetX, width }]
   }
   if (bay.widthMode === 'fixed') {
-    if (bay.width > runWidth) return []
+    const width = bayWidth(bay)
+    if (width > runWidth) return []
     const left =
       bay.horizontal === 'left'
         ? bay.offsetX
         : bay.horizontal === 'right'
-          ? runWidth - bay.width - bay.offsetX
-          : (runWidth - bay.width) / 2 + bay.offsetX
-    return [{ left, width: bay.width }]
+          ? runWidth - width - bay.offsetX
+          : (runWidth - width) / 2 + bay.offsetX
+    return [{ left, width }]
   }
   return repeatSpans(bay, runWidth, maxRepeat)
 }
 
 function repeatSpans(bay: FacadeBay, runWidth: number, maxRepeat: number): Span[] {
-  const { endPier, pier, width } = bay
+  const { endPier, pier } = bay
+  const width = bayWidth(bay)
   const available = runWidth - endPier * 2
   const count = Math.floor((available + pier) / (width + pier))
   if (count < 1) return []
@@ -409,6 +439,8 @@ function openingIn(
   span: Span,
   opening: FacadeBayOpening,
   vertical: { bottom: number; height: number },
+  /** In a bay that hugs its content, the infill before the opening: children sit side by side. */
+  lead?: number,
 ): FacadeOpeningPlacement | undefined {
   let left: number
   let width: number
@@ -420,7 +452,8 @@ function openingIn(
     // An opening wider than its bay is a design error, not something to overflow.
     if (opening.width > span.width + 1e-9) return undefined
     width = opening.width
-    left = span.left + (span.width - width) / 2 + opening.offsetX
+    left =
+      lead === undefined ? span.left + (span.width - width) / 2 + opening.offsetX : span.left + lead
   }
   return {
     kind: opening.kind,

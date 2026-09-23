@@ -408,6 +408,7 @@ export {
 } from './systems/facade/facade-config'
 export {
   bayCladdingRects,
+  bayWidth,
   DEFAULT_FACADE_UNIT,
   FACADE_UNIT_CLEARANCE,
   FACADE_UNIT_MAX_REPEAT,

@@ -1,5 +1,6 @@
 'use client'
 import {
+  bayWidth,
   type FacadeBay,
   type FacadeBayBalcony,
   type FacadeBayOpening,
@@ -274,7 +275,41 @@ export function FacadeBayControls({
           </Row>
         )}
         {bay.widthMode !== 'stretch' && (
+          <Row label="Width">
+            <SegmentedControl
+              value={bay.fit}
+              onChange={(fit) =>
+                set(
+                  fit === 'content'
+                    ? {
+                        fit,
+                        // Hugging needs real sizes: a panel filling to the edge and a
+                        // stretching opening have none of their own.
+                        ...(bay.infill && bay.infill.width === undefined
+                          ? { infill: { ...bay.infill, width: 0.4 } }
+                          : {}),
+                        ...(opening && opening.widthMode !== 'fixed'
+                          ? { opening: { ...opening, widthMode: 'fixed', offsetX: 0 } }
+                          : {}),
+                      }
+                    : { fit, width: bayWidth(bay) },
+                )
+              }
+              options={[
+                { value: 'content', label: 'Fit content' },
+                { value: 'locked', label: 'Set' },
+              ]}
+            />
+          </Row>
+        )}
+        {bay.widthMode !== 'stretch' && bay.fit === 'locked' && (
           <MetreSlider label="Bay width" value={bay.width} min={0.3} max={12} onChange={(width) => set({ width })} />
+        )}
+        {bay.widthMode !== 'stretch' && bay.fit === 'content' && (
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            {bayWidth(bay).toFixed(2)} m: its panels and opening side by side. Widening either
+            pushes the bay, and the run re-flows.
+          </p>
         )}
         {bay.widthMode !== 'repeat' && (
           <MetreSlider label={offsetLabel} value={bay.offsetX} min={-10} max={10} onChange={(offsetX) => set({ offsetX })} />
@@ -444,16 +479,28 @@ export function FacadeBayControls({
           onChange={(on) =>
             set({
               infill: on
-                ? { material: 'library:preset-charcoal', thickness: 0.03, standoff: 0, sides: 'both', height: 'storey' }
+                ? {
+                    material: 'library:preset-charcoal',
+                    thickness: 0.03,
+                    standoff: 0,
+                    sides: 'both',
+                    height: 'storey',
+                    // A bay that hugs its content grows by the panels' own width.
+                    ...(bay.fit === 'content' ? { width: DEFAULT_SIDE_ROOM } : {}),
+                  }
                 : undefined,
-              // An opening as wide as its bay leaves no side to clad: make room.
-              ...(on && sideRoom < MIN_SIDE_ROOM && opening?.widthMode === 'fixed' && bay.widthMode !== 'stretch'
+              // An opening as wide as its locked bay leaves no side to clad: make room.
+              ...(on &&
+              bay.fit === 'locked' &&
+              sideRoom < MIN_SIDE_ROOM &&
+              opening?.widthMode === 'fixed' &&
+              bay.widthMode !== 'stretch'
                 ? { width: opening.width + 2 * DEFAULT_SIDE_ROOM }
                 : {}),
             })
           }
         />
-        {bay.infill && sideRoom < MIN_SIDE_ROOM && (
+        {bay.fit === 'locked' && bay.infill && sideRoom < MIN_SIDE_ROOM && (
           <p role="status" className="text-[11px] leading-4 text-amber-400">
             No room beside the opening: widen the bay or narrow the opening.
           </p>
@@ -481,6 +528,7 @@ export function FacadeBayControls({
                 ]}
               />
             </Row>
+            {bay.fit === 'locked' && (
             <ToggleControl
               label="Fill to the edge of the bay"
               checked={bay.infill.width === undefined}
@@ -488,6 +536,7 @@ export function FacadeBayControls({
                 set({ infill: { ...bay.infill!, width: fill ? undefined : 0.5 } })
               }
             />
+            )}
             {bay.infill.width !== undefined && (
               <MetreSlider
                 label="Panel width"

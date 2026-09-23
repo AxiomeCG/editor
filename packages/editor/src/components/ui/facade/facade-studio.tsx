@@ -119,6 +119,7 @@ export function FacadeStudio() {
       endPier: 0.4,
       pier: 1,
       remainder: 'center',
+      fit: 'locked',
     }
     const added = { ...base, opening: newOpening(base) }
     update({ bays: [...bays, added] })
@@ -247,6 +248,7 @@ export function FacadeStudio() {
             selectedBay={selectedBay}
             hoveredBay={hoveredBay}
             onHoverBay={setHoveredBay}
+            onBayChange={replace}
             onSelectBay={selectBay}
             onResize={(width) => setTestSize({ width })}
           />

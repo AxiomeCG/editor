@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   bayCladdingRects,
+  bayWidth,
   DEFAULT_FACADE_UNIT,
   type FacadeBay,
   type FacadeBayOpening,
@@ -196,6 +197,47 @@ describe('facade unit resolution', () => {
     expect(placements).toHaveLength(4)
     expect(new Set(placements.map((p) => p.key)).size).toBe(placements.length)
     expect(placements.find((p) => p.bay === 'door')!.opening!.kind).toBe('door')
+  })
+
+  test('a bay that hugs its content is as wide as infill, opening and infill', () => {
+    const hug = (infill: object) =>
+      FacadeUnitSchema.parse({
+        name: 'Hug',
+        bays: [
+          {
+            key: 'bay',
+            width: 5,
+            fit: 'content',
+            pier: 0.5,
+            endPier: 0.2,
+            opening: { width: 1.2, height: 1.4, sill: 0.9 },
+            infill: { material: 'library:preset-charcoal', ...infill },
+          },
+        ],
+      })
+    const narrow = hug({ width: 0.4 })
+    const wide = hug({ width: 0.8 })
+    expect(bayWidth(narrow.bays[0]!)).toBeCloseTo(2, 9)
+    expect(bayWidth(wide.bays[0]!)).toBeCloseTo(2.8, 9)
+
+    // A wider panel pushes the bay, and the run fits fewer of them.
+    const count = (unit: typeof narrow) => resolveFacadeUnit(unit, run(12)).placements.length
+    expect(count(wide)).toBeLessThan(count(narrow))
+
+    // Children sit side by side: with the panel on the left only, the opening follows it.
+    const left = hug({ width: 0.6, sides: 'left' })
+    const [placement] = resolveFacadeUnit(left, run(4)).placements
+    expect(placement!.right - placement!.left).toBeCloseTo(1.8, 9)
+    expect(placement!.opening!.left - placement!.left).toBeCloseTo(0.6, 9)
+    expect(placement!.right - placement!.opening!.right).toBeCloseTo(0, 9)
+  })
+
+  test('a locked bay keeps its width whatever its panels are', () => {
+    const bay = FacadeUnitSchema.parse({
+      name: 'Locked',
+      bays: [{ key: 'bay', width: 3, infill: { material: 'library:preset-charcoal', width: 0.8 } }],
+    }).bays[0]!
+    expect(bayWidth(bay)).toBe(3)
   })
 
   test('bays pinned to the same side stack like flex items instead of colliding', () => {
