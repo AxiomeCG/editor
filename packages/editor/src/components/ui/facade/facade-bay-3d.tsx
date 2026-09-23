@@ -107,11 +107,14 @@ function TextureRefresh() {
 export function FacadeBay3D({
   unit,
   scenario,
+  preview = null,
   className,
 }: {
   unit: FacadeUnit
   /** Memoise it: a new object rebuilds the scene. */
   scenario: FacadeScenario
+  /** The unit as a hovered choice would make it. */
+  preview?: FacadeUnit | null
   className?: string
 }) {
   const { width, height } = scenario
@@ -141,8 +144,9 @@ export function FacadeBay3D({
           shadow-camera-bottom={-size}
           shadow-camera-far={60}
         />
-        <FacadeBayContent unit={unit} scenario={scenario} />
-        <BayOverlay unit={unit} scenario={scenario} />
+        {/* A hovered choice is shown, not committed: the 3D view builds it instead. */}
+        <FacadeBayContent unit={preview ?? unit} scenario={scenario} />
+        <BayOverlay unit={preview ?? unit} scenario={scenario} />
         <TextureRefresh />
         <OrbitControls
           makeDefault

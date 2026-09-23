@@ -9,6 +9,8 @@ interface SegmentedControlProps<T extends string> {
   className?: string
   disabled?: boolean
   mixed?: boolean
+  /** The option under the pointer, or null once it leaves: lets a host preview a choice. */
+  onHoverValue?: (value: T | null) => void
 }
 
 export function SegmentedControl<T extends string>({
@@ -18,9 +20,11 @@ export function SegmentedControl<T extends string>({
   className,
   disabled = false,
   mixed = false,
+  onHoverValue,
 }: SegmentedControlProps<T>) {
   return (
     <div
+      onPointerLeave={onHoverValue && (() => onHoverValue(null))}
       className={cn(
         'flex h-9 w-full items-center rounded-lg border border-border/50 bg-[#2C2C2E] p-[3px]',
         disabled && 'opacity-60',
@@ -41,6 +45,7 @@ export function SegmentedControl<T extends string>({
             disabled={disabled}
             key={option.value}
             onClick={() => onChange(option.value)}
+            onPointerEnter={onHoverValue && !disabled ? () => onHoverValue(option.value) : undefined}
             type="button"
           >
             <span className="relative z-10 flex items-center gap-1.5">{option.label}</span>

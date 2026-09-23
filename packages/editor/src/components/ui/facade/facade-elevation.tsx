@@ -8,7 +8,8 @@ import {
   type FacadeUnitResolution,
   resolveFacadeUnit,
 } from '@pascal-app/core'
-import { useId, useMemo, useRef } from 'react'
+import { AnimatePresence, motion, type Transition, useReducedMotion } from 'motion/react'
+import { useEffect, useId, useMemo, useRef } from 'react'
 import { cn } from '../../../lib/utils'
 import { bayColor } from './facade-bay-colors'
 import { type InsertionSlot, insertionSlots } from './facade-insertion'
@@ -90,6 +91,7 @@ export function FacadeElevation({
   onHoverBay,
   onBayChange,
   onInsertBay,
+  preview = null,
   onResize,
   compact = false,
   className,
@@ -109,17 +111,34 @@ export function FacadeElevation({
   onBayChange?: (bay: FacadeBay) => void
   /** Offers a magnetic "+" wherever a bay can be added. */
   onInsertBay?: (slot: InsertionSlot) => void
+  /**
+   * The unit as a hovered choice would make it. It is drawn instead of `unit`,
+   * everything gliding to where it would be and back when the preview ends —
+   * shown, never committed.
+   */
+  preview?: FacadeUnit | null
   onResize?: (width: number) => void
   compact?: boolean
   className?: string
 }) {
   const svg = useRef<SVGSVGElement>(null)
   const container = useRef<HTMLDivElement>(null)
-  const resolution = useMemo(
-    () => resolveScenario(unit, { width, height, partitions }),
-    [unit, width, height, partitions],
+  const scenario = useMemo(() => ({ width, height, partitions }), [width, height, partitions])
+  // What is drawn: the previewed unit while a choice is hovered, else the unit itself.
+  const shown = preview ?? unit
+  const resolution = useMemo(() => resolveScenario(shown, scenario), [shown, scenario])
+  const committed = useMemo(
+    () => (preview ? resolveScenario(unit, scenario).placements : null),
+    [preview, unit, scenario],
   )
   const { runs } = resolution
+  // Glide only when a preview starts, changes or ends; edits (a slider drag) stay instant.
+  const reduced = useReducedMotion()
+  const lastPreview = useRef(preview)
+  const transition: Transition = lastPreview.current !== preview && !reduced ? MORPH : INSTANT
+  useEffect(() => {
+    lastPreview.current = preview
+  })
   const quiet = useMemo(
     () => resolution.placements.flatMap((p) => (p.opening ? [p.opening] : [])),
     [resolution.placements],
@@ -132,9 +151,9 @@ export function FacadeElevation({
   const below = compact ? 0.4 : 1.3
   // SVG y grows downwards; facade y grows up from the floor.
   const y = (up: number) => height - up
-  const trimColor = materialSwatch(unit.paint.frame)?.color ?? '#d4d4d8'
-  const paint = usePaintFills(unit)
-  const wallFill = paint.fill(unit.paint.wall)
+  const trimColor = materialSwatch(shown.paint.frame)?.color ?? '#d4d4d8'
+  const paint = usePaintFills(shown)
+  const wallFill = paint.fill(shown.paint.wall)
   const selected = resolution.placements.filter((p) => p.bay === selectedBay)
 
   const toRun = (clientX: number) => {
@@ -191,14 +210,15 @@ export function FacadeElevation({
 
         {/* Every bay's extent: outlined in its colour, filled when selected. Gaps are piers. */}
         {resolution.placements.map((placement) => {
-          const color = bayColor(unit, placement.bay)
+          const color = bayColor(shown, placement.bay)
           const isSelected = placement.bay === selectedBay || placement.bay === hoveredBay
           return (
-            <rect
+            <motion.rect
               key={`span:${placement.key}`}
-              x={placement.left}
+              initial={false}
+              animate={{ x: placement.left, width: placement.right - placement.left }}
+              transition={transition}
               y={0}
-              width={placement.right - placement.left}
               height={height}
               fill={color}
               fillOpacity={isSelected ? 0.14 : 0}
@@ -211,32 +231,45 @@ export function FacadeElevation({
           )
         })}
 
-        {resolution.placements.map((placement) => (
-          <Placement
-            key={placement.key}
-            placement={placement}
-            bay={unit.bays.find((b) => b.key === placement.bay)}
-            runHeight={height}
-            y={y}
-            trim={trimColor}
-            fill={paint.fill}
-            selected={placement.bay === selectedBay}
-          />
-        ))}
+        {/* Placements keep their key between states, so a window is seen travelling;
+            new ones fade in, gone ones fade out. */}
+        <AnimatePresence initial={false}>
+          {resolution.placements.map((placement) => (
+            <motion.g
+              key={placement.key}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={transition}
+            >
+              <Placement
+                placement={placement}
+                bay={shown.bays.find((b) => b.key === placement.bay)}
+                runHeight={height}
+                y={y}
+                trim={trimColor}
+                fill={paint.fill}
+                selected={placement.bay === selectedBay}
+                transition={transition}
+              />
+            </motion.g>
+          ))}
+        </AnimatePresence>
 
         {resolution.placements.map((placement) => {
           const width = placement.right - placement.left
-          const bay = unit.bays.find((b) => b.key === placement.bay)
+          const bay = shown.bays.find((b) => b.key === placement.bay)
           const isSelected = placement.bay === selectedBay
           return (
             <g key={`band:${placement.key}`}>
-              <rect
-                x={placement.left}
+              <motion.rect
+                initial={false}
+                animate={{ x: placement.left, width }}
+                transition={transition}
                 y={height + BAND.top}
-                width={width}
                 height={compact ? BAND.height / 2 : BAND.height}
                 rx={0.04}
-                fill={bayColor(unit, placement.bay)}
+                fill={bayColor(shown, placement.bay)}
                 fillOpacity={selectedBay === null || isSelected ? 0.9 : 0.45}
               />
               {!compact && width > 0.5 && (
@@ -314,7 +347,7 @@ export function FacadeElevation({
           </>
         )}
 
-        {onBayChange && !compact && selected[0] && (
+        {onBayChange && !compact && !preview && selected[0] && (
           <BayHandles
             bay={unit.bays.find((b) => b.key === selectedBay)!}
             placement={selected[0]}
@@ -342,7 +375,7 @@ export function FacadeElevation({
           </g>
         )}
       </svg>
-      {onInsertBay && slots.length > 0 && (
+      {onInsertBay && !preview && slots.length > 0 && (
         <InsertionMagnet
           container={container}
           svg={svg}
@@ -352,7 +385,10 @@ export function FacadeElevation({
           onInsert={onInsertBay}
         />
       )}
-      {(resolution.error || resolution.skipped > 0) && !compact && (
+      {committed && !compact && (
+        <PreviewSummary unit={unit} before={committed} after={resolution.placements} />
+      )}
+      {!preview && (resolution.error || resolution.skipped > 0) && !compact && (
         <p
           role={resolution.error ? 'alert' : 'status'}
           className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm"
@@ -362,6 +398,42 @@ export function FacadeElevation({
         </p>
       )}
     </div>
+  )
+}
+
+/** One short ease-out, no bounce: enough to show where things go, not enough to make anyone queasy. */
+const MORPH: Transition = { duration: 0.34, ease: [0.22, 1, 0.36, 1] }
+const INSTANT: Transition = { duration: 0 }
+
+/** What the hovered choice changes, in words, and that nothing is committed yet. */
+function PreviewSummary({
+  unit,
+  before,
+  after,
+}: {
+  unit: FacadeUnit
+  before: readonly FacadeBayPlacement[]
+  after: readonly FacadeBayPlacement[]
+}) {
+  const count = (placements: readonly FacadeBayPlacement[], key: string) =>
+    placements.filter((p) => p.bay === key).length
+  const changes = unit.bays.flatMap((bay) => {
+    const from = count(before, bay.key)
+    const to = count(after, bay.key)
+    return from === to ? [] : [`${bay.name ?? bay.key} ×${from} → ×${to}`]
+  })
+  return (
+    <p
+      role="status"
+      className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-background/90 px-3 py-1 text-xs text-foreground shadow-sm ring-1 ring-primary/50"
+    >
+      <span className="font-medium">Previewing</span>
+      <span className="text-muted-foreground">
+        {' · '}
+        {changes.length ? changes.join(' · ') : 'same bays, new layout'}
+        {' · click to keep, move away to cancel'}
+      </span>
+    </p>
   )
 }
 
@@ -569,6 +641,7 @@ function Placement({
   trim,
   fill,
   selected,
+  transition,
 }: {
   placement: FacadeBayPlacement
   bay: FacadeBay | undefined
@@ -577,18 +650,24 @@ function Placement({
   trim: string
   fill: (ref: string | undefined) => string | undefined
   selected: boolean
+  transition: Transition
 }) {
   const { opening, balcony } = placement
+  const box = (left: number, right: number, bottom: number, top: number) => ({
+    x: left,
+    y: y(top),
+    width: right - left,
+    height: top - bottom,
+  })
   return (
     <g opacity={selected ? 1 : 0.9}>
       {bay &&
         bayCladdingRects(bay, placement, runHeight).map((rect) => (
-          <rect
+          <motion.rect
             key={rect.part}
-            x={rect.left}
-            y={y(rect.top)}
-            width={rect.right - rect.left}
-            height={rect.top - rect.bottom}
+            initial={false}
+            animate={box(rect.left, rect.right, rect.bottom, rect.top)}
+            transition={transition}
             fill={fill(rect.cladding.material)}
             className="stroke-black/30"
             strokeWidth={0.5}
@@ -597,24 +676,23 @@ function Placement({
         ))}
       {opening && (
         <>
-          <rect
-            x={opening.left}
-            y={y(opening.top)}
-            width={opening.right - opening.left}
-            height={opening.top - opening.bottom}
+          <motion.rect
+            initial={false}
+            animate={box(opening.left, opening.right, opening.bottom, opening.top)}
+            transition={transition}
             fill="#9cc3d8"
             fillOpacity={0.9}
             stroke={trim}
             strokeWidth={2}
             vectorEffect="non-scaling-stroke"
           />
-          {divisions(opening).map(([x1, y1, x2, y2]) => (
-            <line
-              key={`${x1}:${y1}:${x2}:${y2}`}
-              x1={x1}
-              x2={x2}
-              y1={y(y1)}
-              y2={y(y2)}
+          {divisions(opening).map(([x1, y1, x2, y2], index) => (
+            <motion.line
+              // biome-ignore lint/suspicious/noArrayIndexKey: the nth mullion glides to its new place
+              key={index}
+              initial={false}
+              animate={{ x1, x2, y1: y(y1), y2: y(y2) }}
+              transition={transition}
               stroke={trim}
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"

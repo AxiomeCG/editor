@@ -9,11 +9,10 @@ import {
   type FacadeUnitVerticalAnchor,
 } from '@pascal-app/core'
 import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { SegmentedControl } from '../controls/segmented-control'
+import { type ReactNode, useRef } from 'react'
 import { SliderControl } from '../controls/slider-control'
-import { ToggleControl } from '../controls/toggle-control'
 import { Button } from '../primitives/button'
+import { HoverPreviewProvider, PreviewSegmented, PreviewToggle } from './facade-hover-preview'
 import { MaterialField } from './facade-material-field'
 import { StudioSection } from './studio-section'
 
@@ -187,6 +186,7 @@ export function FacadeBayControls({
   onRemove,
   canMoveUp,
   canMoveDown,
+  onPreview,
   sectionIndex,
   sectionCount,
 }: {
@@ -199,8 +199,24 @@ export function FacadeBayControls({
   onRemove: () => void
   canMoveUp: boolean
   canMoveDown: boolean
+  /** What a hovered choice would make of this bay, or null when nothing is hovered. */
+  onPreview?: (bay: FacadeBay | null) => void
 }) {
-  const set = (patch: Partial<FacadeBay>) => onChange({ ...bay, ...patch })
+  // While a hovered choice replays its onChange, writes go to the preview, not the draft.
+  const previewing = useRef(false)
+  const set = (patch: Partial<FacadeBay>) =>
+    previewing.current ? onPreview?.({ ...bay, ...patch }) : onChange({ ...bay, ...patch })
+  const hoverPreview = {
+    begin: (choose: () => void) => {
+      previewing.current = true
+      try {
+        choose()
+      } finally {
+        previewing.current = false
+      }
+    },
+    end: () => onPreview?.(null),
+  }
   const { opening, balcony } = bay
   const setOpening = (patch: Partial<FacadeBayOpening>) => set({ opening: { ...opening!, ...patch } })
   const setBalcony = (patch: Partial<FacadeBayBalcony>) => set({ balcony: { ...balcony!, ...patch } })
@@ -221,7 +237,7 @@ export function FacadeBayControls({
 
   // A fragment: the sections must be children of the panel's scroll container to stay pinned.
   return (
-    <>
+    <HoverPreviewProvider value={hoverPreview}>
       <div className="flex shrink-0 items-center gap-1 px-3 py-2">
         <input
           aria-label="Bay name"
@@ -255,7 +271,7 @@ export function FacadeBayControls({
 
       <StudioSection title="Rhythm" index={sectionIndex + 0} count={sectionCount}>
         <Row label="Size">
-          <SegmentedControl
+          <PreviewSegmented
             value={bay.widthMode}
             onChange={(widthMode) => set({ widthMode })}
             options={[
@@ -267,7 +283,7 @@ export function FacadeBayControls({
         </Row>
         {bay.widthMode !== 'stretch' && (
           <Row label="Pinned to">
-            <SegmentedControl
+            <PreviewSegmented
               value={bay.horizontal}
               onChange={(horizontal) => set({ horizontal })}
               options={horizontalOptions}
@@ -276,7 +292,7 @@ export function FacadeBayControls({
         )}
         {bay.widthMode !== 'stretch' && (
           <Row label="Width">
-            <SegmentedControl
+            <PreviewSegmented
               value={bay.fit}
               onChange={(fit) =>
                 set(
@@ -319,7 +335,7 @@ export function FacadeBayControls({
             <MetreSlider label="Pier width" value={bay.pier} max={10} onChange={(pier) => set({ pier })} />
             <MetreSlider label="End piers" value={bay.endPier} max={5} onChange={(endPier) => set({ endPier })} />
             <Row label="Leftover">
-              <SegmentedControl
+              <PreviewSegmented
                 value={bay.remainder}
                 onChange={(remainder) => set({ remainder })}
                 options={[
@@ -334,7 +350,7 @@ export function FacadeBayControls({
       </StudioSection>
 
       <StudioSection title="Opening" index={sectionIndex + 1} count={sectionCount}>
-        <ToggleControl
+        <PreviewToggle
           label="This bay has an opening"
           checked={!!opening}
           onChange={(on) => set({ opening: on ? newOpening(bay) : undefined })}
@@ -342,7 +358,7 @@ export function FacadeBayControls({
         {opening && (
           <>
             <Row label="Kind">
-              <SegmentedControl
+              <PreviewSegmented
                 value={opening.kind}
                 onChange={(kind) =>
                   setOpening(
@@ -376,14 +392,14 @@ export function FacadeBayControls({
                   </select>
                 </Row>
                 <Row label="Panes across">
-                  <SegmentedControl
+                  <PreviewSegmented
                     value={String(opening.columns)}
                     onChange={(columns) => setOpening({ columns: Number(columns) })}
                     options={['1', '2', '3', '4'].map((value) => ({ value, label: value }))}
                   />
                 </Row>
                 <Row label="Panes up">
-                  <SegmentedControl
+                  <PreviewSegmented
                     value={String(opening.rows)}
                     onChange={(rows) => setOpening({ rows: Number(rows) })}
                     options={['1', '2', '3'].map((value) => ({ value, label: value }))}
@@ -409,7 +425,7 @@ export function FacadeBayControls({
               </Row>
             )}
             <Row label="Width">
-              <SegmentedControl
+              <PreviewSegmented
                 value={opening.widthMode}
                 onChange={(widthMode) => setOpening({ widthMode, offsetX: 0 })}
                 options={[
@@ -427,7 +443,7 @@ export function FacadeBayControls({
               <MetreSlider label="Inset" value={opening.offsetX} max={3} onChange={(offsetX) => setOpening({ offsetX })} />
             )}
             <Row label="Height">
-              <SegmentedControl
+              <PreviewSegmented
                 value={opening.heightMode}
                 onChange={(heightMode) => setOpening({ heightMode })}
                 options={[
@@ -440,7 +456,7 @@ export function FacadeBayControls({
               <>
                 <MetreSlider label="Height" value={opening.height} min={0.3} max={10} onChange={(height) => setOpening({ height })} />
                 <Row label="Pinned to">
-                  <SegmentedControl
+                  <PreviewSegmented
                     value={opening.vertical}
                     onChange={(vertical) => setOpening({ vertical })}
                     options={verticalOptions}
@@ -473,7 +489,7 @@ export function FacadeBayControls({
             ? 'The sides of the bay, beside the opening, floor to ceiling.'
             : 'Cladding across the whole bay.'}
         </p>
-        <ToggleControl
+        <PreviewToggle
           label={opening ? 'Panels beside the opening' : 'Clad the whole bay'}
           checked={!!bay.infill}
           onChange={(on) =>
@@ -508,7 +524,7 @@ export function FacadeBayControls({
         {bay.infill && opening && (
           <>
             <Row label="Sides">
-              <SegmentedControl
+              <PreviewSegmented
                 value={bay.infill.sides}
                 onChange={(sides) => set({ infill: { ...bay.infill!, sides } })}
                 options={[
@@ -519,7 +535,7 @@ export function FacadeBayControls({
               />
             </Row>
             <Row label="Height">
-              <SegmentedControl
+              <PreviewSegmented
                 value={bay.infill.height}
                 onChange={(height) => set({ infill: { ...bay.infill!, height } })}
                 options={[
@@ -529,7 +545,7 @@ export function FacadeBayControls({
               />
             </Row>
             {bay.fit === 'locked' && (
-            <ToggleControl
+            <PreviewToggle
               label="Fill to the edge of the bay"
               checked={bay.infill.width === undefined}
               onChange={(fill) =>
@@ -559,7 +575,7 @@ export function FacadeBayControls({
             Below and above the opening, across its width — the band between one floor's
             window and the next.
           </p>
-          <ToggleControl
+          <PreviewToggle
             label="Panels below and above the opening"
             checked={!!bay.spandrel}
             onChange={(on) =>
@@ -573,7 +589,7 @@ export function FacadeBayControls({
           {bay.spandrel && (
             <>
               <Row label="Where">
-                <SegmentedControl
+                <PreviewSegmented
                   value={bay.spandrel.parts}
                   onChange={(parts) => set({ spandrel: { ...bay.spandrel!, parts } })}
                   options={[
@@ -590,7 +606,7 @@ export function FacadeBayControls({
       )}
 
       <StudioSection title="Balcony" index={sectionIndex + (opening ? 4 : 3)} count={sectionCount}>
-        <ToggleControl
+        <PreviewToggle
           label="This bay has a balcony"
           checked={!!balcony}
           onChange={(on) => set({ balcony: on ? newBalcony() : undefined })}
@@ -598,7 +614,7 @@ export function FacadeBayControls({
         {balcony && (
           <>
             <MetreSlider label="Projection" value={balcony.depth} min={0.5} max={3} onChange={(depth) => setBalcony({ depth })} />
-            <ToggleControl
+            <PreviewToggle
               label="As wide as the bay"
               checked={balcony.width === undefined}
               onChange={(full) => setBalcony({ width: full ? undefined : Math.max(0.6, bay.width) })}
@@ -608,7 +624,7 @@ export function FacadeBayControls({
             )}
             <MetreSlider label="Shift" value={balcony.offsetX} min={-6} max={6} onChange={(offsetX) => setBalcony({ offsetX })} />
             <Row label="Span">
-              <SegmentedControl
+              <PreviewSegmented
                 value={balcony.span}
                 onChange={(span) => setBalcony({ span })}
                 options={[
@@ -624,7 +640,7 @@ export function FacadeBayControls({
               </p>
             )}
             <Row label="Railing">
-              <SegmentedControl
+              <PreviewSegmented
                 value={balcony.railing}
                 onChange={(railing) => setBalcony({ railing })}
                 options={[
@@ -651,6 +667,6 @@ export function FacadeBayControls({
           </>
         )}
       </StudioSection>
-    </>
+    </HoverPreviewProvider>
   )
 }

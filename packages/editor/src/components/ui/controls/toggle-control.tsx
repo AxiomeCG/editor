@@ -9,6 +9,8 @@ interface ToggleControlProps {
   onChange: (checked: boolean) => void
   className?: string
   mixed?: boolean
+  /** Pointer in or out: lets a host preview what toggling would do. */
+  onHoverChange?: (hovering: boolean) => void
 }
 
 export function ToggleControl({
@@ -17,6 +19,7 @@ export function ToggleControl({
   onChange,
   className,
   mixed = false,
+  onHoverChange,
 }: ToggleControlProps) {
   return (
     <div
@@ -25,6 +28,8 @@ export function ToggleControl({
         className,
       )}
       onClick={() => onChange(!checked)}
+      onPointerEnter={onHoverChange && (() => onHoverChange(true))}
+      onPointerLeave={onHoverChange && (() => onHoverChange(false))}
     >
       <div className="select-none text-muted-foreground transition-colors group-hover:text-foreground">
         {label}

@@ -5,7 +5,7 @@ import {
   FacadeUnitSchema,
 } from '@pascal-app/core'
 import { Plus, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '../../../lib/utils'
 import {
   type FacadeStudioScenario,
@@ -79,6 +79,26 @@ export function FacadeStudio() {
     [testWidth, testHeight, scenarioKind, partitions],
   )
   const [error, setError] = useState('')
+  // A hovered choice in the side panel, shown as a phantom in both views. Hover intent:
+  // it only appears once the pointer rests, so sweeping across the panel stays quiet.
+  const [previewBay, setPreviewBay] = useState<FacadeBay | null>(null)
+  const intent = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const previewChoice = (next: FacadeBay | null) => {
+    clearTimeout(intent.current)
+    if (!next) return setPreviewBay(null)
+    intent.current = setTimeout(() => setPreviewBay(next), 120)
+  }
+  useEffect(() => () => clearTimeout(intent.current), [])
+  // Choosing commits the draft; the phantom of what was hovered has done its job.
+  useEffect(() => {
+    void draft
+    setPreviewBay(null)
+  }, [draft])
+  const previewUnit = useMemo(() => {
+    if (!draft || !previewBay) return null
+    const unit = { ...draft, bays: draft.bays.map((b) => (b.key === previewBay.key ? previewBay : b)) }
+    return JSON.stringify(unit) === JSON.stringify(draft) ? null : unit
+  }, [draft, previewBay])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -224,6 +244,7 @@ export function FacadeStudio() {
             className={studioView === 'split' ? 'basis-3/5' : 'flex-1'}
             unit={draft}
             scenario={scenario}
+            preview={previewUnit}
           />
         )}
         {studioView !== '3d' && scenarioKind === 'widths' && (
@@ -254,6 +275,7 @@ export function FacadeStudio() {
             onHoverBay={setHoveredBay}
             onBayChange={replace}
             onInsertBay={(slot) => addBay(slot.side, slot.index)}
+            preview={previewUnit}
             onSelectBay={selectBay}
             onResize={(width) => setTestSize({ width })}
           />
@@ -347,6 +369,7 @@ export function FacadeStudio() {
               sectionIndex={2}
               sectionCount={sectionCount}
               onChange={replace}
+              onPreview={previewChoice}
               canMoveUp={index > 0}
               canMoveDown={index < bays.length - 1}
               onMove={(direction) => {
