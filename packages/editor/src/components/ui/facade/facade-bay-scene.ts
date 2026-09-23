@@ -2,9 +2,7 @@ import {
   type DoorNode,
   type FacadeUnit,
   type FenceNode,
-  LevelNode,
   type SlabNode,
-  WallNode,
   useScene,
   type WindowNode,
 } from '@pascal-app/core'
@@ -30,9 +28,8 @@ import {
   Vector2,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { type FacadeScenario, STUDIO_WALL_THICKNESS, scenarioScene } from './facade-scenario'
 
-/** The studio's test wall: thick enough for window reveals to read. */
-const STUDIO_WALL_THICKNESS = 0.25
 const RAIL = 0.04
 
 export type FaceRect = { x0: number; x1: number; y0: number; y1: number }
@@ -95,21 +92,12 @@ function openingRect(node: WindowNode | DoorNode) {
  */
 export function buildFacadeBayScene(
   unit: FacadeUnit,
-  width: number,
-  height: number,
+  scenario: FacadeScenario,
 ): { group: Group; plan: FacadeFillPlan | null; dispose: () => void } {
+  const { width, height } = scenario
   const group = new Group()
   const owned: Material[] = []
-  const level = LevelNode.parse({ level: 0, height })
-  const wall = WallNode.parse({
-    parentId: level.id,
-    start: [0, 0],
-    end: [width, 0],
-    thickness: STUDIO_WALL_THICKNESS,
-    height,
-    frontSide: 'exterior',
-    backSide: 'interior',
-  })
+  const { wall, partitions, nodes } = scenarioScene(scenario)
 
   // `scene:` paint resolves against the open project, as it will once applied.
   const materials = useScene.getState().materials
@@ -117,11 +105,7 @@ export function buildFacadeBayScene(
 
   let plan: FacadeFillPlan | null = null
   try {
-    plan = planFacadeFill({
-      walls: [wall],
-      nodes: { [level.id]: level, [wall.id]: wall },
-      unit,
-    })
+    plan = planFacadeFill({ walls: [wall], nodes, unit })
   } catch {
     // The elevation shows the resolver's message; the 3D view shows the bare wall.
   }
@@ -173,6 +157,18 @@ export function buildFacadeBayScene(
   for (const part of wallPlan?.balconies.values ?? []) {
     if (part.type === 'slab') group.add(balconyDeck(part, paint(part.slots?.surface) ?? deck))
     else group.add(balconyRailing(part, paint(part.slots?.posts) ?? metal, glass))
+  }
+
+  // Interior walls behind the facade: orbit round to see which room each bay falls in.
+  const partitionMaterial = new MeshStandardMaterial({ color: '#e7e3dc', roughness: 0.95 })
+  owned.push(partitionMaterial)
+  for (const partition of partitions) {
+    const depth = Math.abs(partition.end[1] - partition.start[1]) - STUDIO_WALL_THICKNESS / 2
+    const mesh = new Mesh(new BoxGeometry(partition.thickness ?? 0.1, height, depth), partitionMaterial)
+    mesh.position.set(partition.start[0], height / 2, -STUDIO_WALL_THICKNESS / 2 - depth / 2)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    group.add(mesh)
   }
 
   const ground = new Mesh(

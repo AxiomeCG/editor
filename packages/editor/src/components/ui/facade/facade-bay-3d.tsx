@@ -7,9 +7,10 @@ import { useEffect, useMemo } from 'react'
 import { WebGPURenderer } from 'three/webgpu'
 import { cn } from '../../../lib/utils'
 import { buildFacadeBayScene } from './facade-bay-scene'
+import type { FacadeScenario } from './facade-scenario'
 
-function FacadeBayContent({ unit, width, height }: { unit: FacadeUnit; width: number; height: number }) {
-  const scene = useMemo(() => buildFacadeBayScene(unit, width, height), [unit, width, height])
+function FacadeBayContent({ unit, scenario }: { unit: FacadeUnit; scenario: FacadeScenario }) {
+  const scene = useMemo(() => buildFacadeBayScene(unit, scenario), [unit, scenario])
   useEffect(() => scene.dispose, [scene])
   return <primitive object={scene.group} />
 }
@@ -37,15 +38,15 @@ function TextureRefresh() {
  */
 export function FacadeBay3D({
   unit,
-  width,
-  height,
+  scenario,
   className,
 }: {
   unit: FacadeUnit
-  width: number
-  height: number
+  /** Memoise it: a new object rebuilds the scene. */
+  scenario: FacadeScenario
   className?: string
 }) {
+  const { width, height } = scenario
   const size = Math.max(width, height)
   return (
     <div className={cn('relative min-h-0', className)} role="img" aria-label={`${unit.name} in 3D`}>
@@ -72,7 +73,7 @@ export function FacadeBay3D({
           shadow-camera-bottom={-size}
           shadow-camera-far={60}
         />
-        <FacadeBayContent unit={unit} width={width} height={height} />
+        <FacadeBayContent unit={unit} scenario={scenario} />
         <TextureRefresh />
         <OrbitControls
           makeDefault

@@ -5,17 +5,31 @@ import {
   FacadeUnitSchema,
 } from '@pascal-app/core'
 import { Plus, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { cn } from '../../../lib/utils'
-import { type FacadeStudioView, useFacadeTool } from '../../../store/use-facade-tool'
+import {
+  type FacadeStudioScenario,
+  type FacadeStudioView,
+  useFacadeTool,
+} from '../../../store/use-facade-tool'
 import { PanelSection } from '../controls/panel-section'
 import { SegmentedControl } from '../controls/segmented-control'
 import { SliderControl } from '../controls/slider-control'
 import { Button } from '../primitives/button'
 import { FacadeBay3D } from './facade-bay-3d'
-import { FacadeElevation, resolveElevation } from './facade-elevation'
+import { FacadeElevation, resolveElevation, resolveScenario } from './facade-elevation'
 import { FacadeBayControls, newOpening } from './facade-bay-controls'
 import { MaterialField } from './facade-material-field'
+import { type FacadeScenario, nextPartition, SCENARIO_WIDTHS } from './facade-scenario'
+
+const NO_PARTITIONS: readonly number[] = []
+
+const SCENARIO_HELP: Record<FacadeStudioScenario, string> = {
+  run: 'One run, corner to corner. Drag the right corner to test other lengths.',
+  partitions:
+    'Interior walls meeting the facade end a run; the unit starts again in each room. Drag them.',
+  widths: 'The unit at several run widths, like breakpoints.',
+}
 
 
 function describe(bay: FacadeBay) {
@@ -49,7 +63,18 @@ export function FacadeStudio() {
   const testWidth = useFacadeTool((s) => s.testWidth)
   const testHeight = useFacadeTool((s) => s.testHeight)
   const studioView = useFacadeTool((s) => s.studioView)
-  const { setDraft, selectBay, setTestSize, setStudioView, closeStudio } = useFacadeTool.getState()
+  const scenarioKind = useFacadeTool((s) => s.scenario)
+  const partitions = useFacadeTool((s) => s.partitions)
+  const { setDraft, selectBay, setTestSize, setStudioView, closeStudio, setScenario, setPartitions } =
+    useFacadeTool.getState()
+  const scenario = useMemo<FacadeScenario>(
+    () => ({
+      width: testWidth,
+      height: testHeight,
+      partitions: scenarioKind === 'partitions' ? partitions : NO_PARTITIONS,
+    }),
+    [testWidth, testHeight, scenarioKind, partitions],
+  )
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -67,7 +92,7 @@ export function FacadeStudio() {
   }
   const bays = draft.bays
   const placed = new Map<string, number>()
-  for (const placement of resolveElevation(draft, testWidth, testHeight).placements)
+  for (const placement of resolveScenario(draft, scenario).placements)
     placed.set(placement.bay, (placed.get(placement.bay) ?? 0) + 1)
   const index = bays.findIndex((m) => m.key === selectedBay)
   const bay = index >= 0 ? bays[index] : undefined
@@ -90,6 +115,17 @@ export function FacadeStudio() {
     update({ bays: [...bays, added] })
     selectBay(added.key)
   }
+  const chooseScenario = (next: FacadeStudioScenario) => {
+    setScenario(next)
+    if (next !== 'partitions' || partitions.length) return
+    const at = nextPartition({ ...scenario, partitions: [] })
+    if (at !== null) setPartitions([at])
+  }
+  const addPartition = () => {
+    const at = nextPartition(scenario)
+    if (at !== null) setPartitions([...partitions, at].sort((a, b) => a - b))
+  }
+
   const done = () => {
     const parsed = FacadeUnitSchema.safeParse(draft)
     if (!parsed.success) {
@@ -105,11 +141,33 @@ export function FacadeStudio() {
       <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-3 border-border/50 border-b px-4 py-2">
           <span className="text-sm font-medium">Facade studio</span>
-          <span className="text-xs text-muted-foreground">
-            One run, corner to corner. Drag the right corner to test other lengths.
+          <SegmentedControl<FacadeStudioScenario>
+            className="w-72"
+            value={scenarioKind}
+            onChange={chooseScenario}
+            options={[
+              { value: 'run', label: 'One run' },
+              { value: 'partitions', label: 'Interior walls' },
+              { value: 'widths', label: 'Widths' },
+            ]}
+          />
+          {scenarioKind === 'partitions' && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-full"
+              disabled={nextPartition(scenario) === null}
+              onClick={addPartition}
+            >
+              <Plus className="size-3.5" />
+              Interior wall
+            </Button>
+          )}
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {SCENARIO_HELP[scenarioKind]}
           </span>
           <SegmentedControl<FacadeStudioView>
-            className="ml-auto w-44"
+            className="w-44"
             value={studioView}
             onChange={setStudioView}
             options={[
@@ -151,11 +209,22 @@ export function FacadeStudio() {
           <FacadeBay3D
             className={studioView === 'split' ? 'basis-3/5' : 'flex-1'}
             unit={draft}
-            width={testWidth}
-            height={testHeight}
+            scenario={scenario}
           />
         )}
-        {studioView !== '3d' && (
+        {studioView !== '3d' && scenarioKind === 'widths' && (
+          <FacadeWidths
+            className={cn(
+              'min-h-0 px-8 py-4',
+              studioView === 'split' ? 'basis-2/5 border-border/50 border-t' : 'flex-1',
+            )}
+            unit={draft}
+            height={testHeight}
+            selectedBay={selectedBay}
+            onSelectBay={selectBay}
+          />
+        )}
+        {studioView !== '3d' && scenarioKind !== 'widths' && (
           <FacadeElevation
             className={cn(
               'min-h-0 p-8',
@@ -164,6 +233,8 @@ export function FacadeStudio() {
             unit={draft}
             width={testWidth}
             height={testHeight}
+            partitions={scenario.partitions}
+            onPartitionsChange={setPartitions}
             selectedBay={selectedBay}
             onSelectBay={selectBay}
             onResize={(width) => setTestSize({ width })}
@@ -226,9 +297,9 @@ export function FacadeStudio() {
                     <span className="text-[11px] text-muted-foreground">
                       {describe(m)} ·{' '}
                       {placed.get(m.key) ? (
-                        `×${placed.get(m.key)} on this run`
+                        `×${placed.get(m.key)} on this test`
                       ) : (
-                        <span className="text-amber-400">no room on this run</span>
+                        <span className="text-amber-400">no room on this test</span>
                       )}
                     </span>
                   </button>
@@ -277,6 +348,49 @@ export function FacadeStudio() {
           </div>
         </div>
       </aside>
+    </div>
+  )
+}
+
+/** The unit at several run widths, one above the other, so its breakpoints show at a glance. */
+function FacadeWidths({
+  unit,
+  height,
+  selectedBay,
+  onSelectBay,
+  className,
+}: {
+  unit: FacadeUnit
+  height: number
+  selectedBay: string | null
+  onSelectBay: (key: string) => void
+  className?: string
+}) {
+  return (
+    <div className={cn('flex flex-col gap-1', className)}>
+      {SCENARIO_WIDTHS.map((width) => {
+        const { placements, error } = resolveElevation(unit, width, height)
+        const bays = placements.length
+        return (
+          <div key={width} className="flex min-h-0 flex-1 items-center gap-3">
+            <div className="w-20 shrink-0 text-right text-xs">
+              <div className="font-mono">{width.toFixed(1)} m</div>
+              <div className="text-muted-foreground">
+                {error ? 'invalid' : bays ? `${bays} ${bays === 1 ? 'bay' : 'bays'}` : 'nothing fits'}
+              </div>
+            </div>
+            <FacadeElevation
+              compact
+              className="h-full min-w-0 flex-1"
+              unit={unit}
+              width={width}
+              height={height}
+              selectedBay={selectedBay}
+              onSelectBay={onSelectBay}
+            />
+          </div>
+        )
+      })}
     </div>
   )
 }

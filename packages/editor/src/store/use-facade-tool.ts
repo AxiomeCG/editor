@@ -3,6 +3,8 @@ import type { FacadeScope } from '@pascal-app/core/building'
 import { create } from 'zustand'
 
 export type FacadeStudioView = '3d' | '2d' | 'split'
+/** What the studio tests the unit against: one run, interior walls meeting it, or several widths. */
+export type FacadeStudioScenario = 'run' | 'partitions' | 'widths'
 
 type FacadeToolState = {
   /** The unit the tool applies. */
@@ -16,6 +18,11 @@ type FacadeToolState = {
   testHeight: number
   studioView: FacadeStudioView
   setStudioView: (view: FacadeStudioView) => void
+  scenario: FacadeStudioScenario
+  setScenario: (scenario: FacadeStudioScenario) => void
+  /** Interior walls meeting the test run, in metres from its left corner. */
+  partitions: number[]
+  setPartitions: (partitions: number[]) => void
   setUnit: (unit: FacadeUnit) => void
   setScope: (scope: FacadeScope) => void
   openStudio: () => void
@@ -34,6 +41,10 @@ export const useFacadeTool = create<FacadeToolState>((set, get) => ({
   testHeight: 3,
   studioView: 'split',
   setStudioView: (studioView) => set({ studioView }),
+  scenario: 'run',
+  setScenario: (scenario) => set({ scenario }),
+  partitions: [],
+  setPartitions: (partitions) => set({ partitions }),
   setUnit: (unit) => set({ unit }),
   setScope: (scope) => set({ scope }),
   openStudio: () => {

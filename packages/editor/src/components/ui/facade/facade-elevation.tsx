@@ -11,10 +11,12 @@ import {
 import { useId, useMemo, useRef } from 'react'
 import { cn } from '../../../lib/utils'
 import { materialSwatch } from './facade-material-field'
+import { type FacadeScenario, PARTITION_MARGIN, PARTITION_THICKNESS, scenarioRuns } from './facade-scenario'
 
 const RAILING_HEIGHT = 1.1
 const SLAB_THICKNESS = 0.18
 const MIN_RUN_WIDTH = 1
+const NO_PARTITIONS: readonly number[] = []
 
 export function resolveElevation(
   unit: FacadeUnit,
@@ -30,14 +32,53 @@ export function resolveElevation(
 
 const metres = (value: number) => `${value.toFixed(2)} m`
 
+const shift = (placement: FacadeBayPlacement, by: number, run: number): FacadeBayPlacement => ({
+  ...placement,
+  key: `${run}:${placement.key}`,
+  left: placement.left + by,
+  right: placement.right + by,
+  opening: placement.opening && {
+    ...placement.opening,
+    left: placement.opening.left + by,
+    right: placement.opening.right + by,
+    x: placement.opening.x + by,
+  },
+  balcony: placement.balcony && {
+    ...placement.balcony,
+    left: placement.balcony.left + by,
+    right: placement.balcony.right + by,
+  },
+})
+
 /**
- * One run seen head-on, drawn from exactly what the resolver places. Corners
- * are the run's two ends; the selected bay's distances to them are dimensioned.
+ * The unit resolved in every run of a scenario, placed in wall metres: each
+ * interior wall ends a run and the unit starts again beside it.
+ */
+export function resolveScenario(unit: FacadeUnit, scenario: FacadeScenario) {
+  const runs = scenarioRuns(scenario)
+  const placements: FacadeBayPlacement[] = []
+  let skipped = 0
+  let error: string | null = null
+  runs.forEach((run, index) => {
+    const resolved = resolveElevation(unit, run.end - run.start, scenario.height)
+    placements.push(...resolved.placements.map((p) => shift(p, run.start, index)))
+    skipped += resolved.skipped
+    error ??= resolved.error
+  })
+  return { runs, placements, skipped, error }
+}
+
+/**
+ * The facade seen head-on, drawn from exactly what the resolver places. Corners
+ * and interior walls end its runs; the selected bay's distances to its run's
+ * ends are dimensioned.
  */
 export function FacadeElevation({
   unit,
   width,
   height,
+  partitions = NO_PARTITIONS,
+  onPartitionsChange,
   selectedBay = null,
   onSelectBay,
   onResize,
@@ -47,6 +88,9 @@ export function FacadeElevation({
   unit: FacadeUnit
   width: number
   height: number
+  /** Interior walls meeting the facade, in metres from its left corner. */
+  partitions?: readonly number[]
+  onPartitionsChange?: (partitions: number[]) => void
   selectedBay?: string | null
   onSelectBay?: (key: string) => void
   onResize?: (width: number) => void
@@ -54,7 +98,11 @@ export function FacadeElevation({
   className?: string
 }) {
   const svg = useRef<SVGSVGElement>(null)
-  const resolution = useMemo(() => resolveElevation(unit, width, height), [unit, width, height])
+  const resolution = useMemo(
+    () => resolveScenario(unit, { width, height, partitions }),
+    [unit, width, height, partitions],
+  )
+  const { runs } = resolution
   const pad = compact ? 0.3 : 0.8
   const below = compact ? 0.4 : 1.3
   // SVG y grows downwards; facade y grows up from the floor.
@@ -159,14 +207,44 @@ export function FacadeElevation({
             </rect>
           ))}
 
+        {partitions.map((x, index) => (
+          <Partition
+            // biome-ignore lint/suspicious/noArrayIndexKey: a partition's identity is its place in the list
+            key={index}
+            x={x}
+            height={height}
+            active={x >= PARTITION_MARGIN && x <= width - PARTITION_MARGIN}
+            onMove={
+              onPartitionsChange &&
+              ((clientX) => {
+                const at = toRun(clientX)
+                if (at === null) return
+                const next = [...partitions]
+                next[index] = Math.min(
+                  width - PARTITION_MARGIN,
+                  Math.max(PARTITION_MARGIN, Math.round(at * 20) / 20),
+                )
+                onPartitionsChange(next)
+              })
+            }
+            onRemove={
+              onPartitionsChange && (() => onPartitionsChange(partitions.filter((_, i) => i !== index)))
+            }
+          />
+        ))}
+
         {!compact && (
           <>
-            {selected.length > 0 && (
-              <>
-                <Dimension from={0} to={selected[0]!.left} at={height + 0.45} />
-                <Dimension from={selected.at(-1)!.right} to={width} at={height + 0.45} />
-              </>
-            )}
+            {runs.length > 1
+              ? runs.map((run) => (
+                  <Dimension key={run.start} from={run.start} to={run.end} at={height + 0.45} />
+                ))
+              : selected.length > 0 && (
+                  <>
+                    <Dimension from={0} to={selected[0]!.left} at={height + 0.45} />
+                    <Dimension from={selected.at(-1)!.right} to={width} at={height + 0.45} />
+                  </>
+                )}
             <Dimension from={0} to={width} at={height + 0.95} />
           </>
         )}
@@ -198,6 +276,68 @@ export function FacadeElevation({
         </p>
       )}
     </div>
+  )
+}
+
+/** An interior wall meeting the facade: it ends a run. Drag to move, × to remove. */
+function Partition({
+  x,
+  height,
+  active,
+  onMove,
+  onRemove,
+}: {
+  x: number
+  height: number
+  active: boolean
+  onMove?: (clientX: number) => void
+  onRemove?: () => void
+}) {
+  const half = PARTITION_THICKNESS / 2
+  return (
+    <g opacity={active ? 1 : 0.35}>
+      <rect
+        x={x - half}
+        y={0}
+        width={PARTITION_THICKNESS}
+        height={height}
+        className="fill-amber-400/70 stroke-amber-300"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+      {onMove && (
+        <rect
+          x={x - 0.25}
+          y={-0.1}
+          width={0.5}
+          height={height + 0.1}
+          fill="transparent"
+          className="cursor-ew-resize"
+          onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+          onPointerMove={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) onMove(event.clientX)
+          }}
+        >
+          <title>Interior wall at {metres(x)}: drag to move it</title>
+        </rect>
+      )}
+      {onRemove && (
+        <g
+          role="button"
+          aria-label={`Remove the interior wall at ${metres(x)}`}
+          className="cursor-pointer"
+          onClick={onRemove}
+        >
+          <circle cx={x} cy={-0.32} r={0.16} className="fill-amber-400" />
+          <path
+            d={`M${x - 0.06} ${-0.38}L${x + 0.06} ${-0.26}M${x + 0.06} ${-0.38}L${x - 0.06} ${-0.26}`}
+            className="stroke-neutral-900"
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        </g>
+      )}
+    </g>
   )
 }
 
