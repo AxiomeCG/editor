@@ -245,9 +245,11 @@ export function FollowPascal() {
       // An edit or a move is read before its first piece plays: one change seen from outside takes the
       // whole commit outdoors, until the play is over. What is waiting in the queue belongs to a later
       // commit, so a build, a deletion, or the edit that follows a finished play never inherits it.
+      // What else the commit starts while its edit still plays (a slab, furniture) keeps it outdoors.
       const edit = 'changed' in event && event.changed === true
-      if (!edit) outsideBuild.current = false
-      else {
+      if (!edit) {
+        if (played.current || revealChangedNodeIds().length === 0) outsideBuild.current = false
+      } else {
         if (played.current) outsideBuild.current = false
         const changed = outsideBuild.current ? [] : revealChangedNodeIds()
         if (changed.length && anyExterior(useScene.getState().nodes, changed))

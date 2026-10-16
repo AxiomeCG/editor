@@ -656,10 +656,14 @@ test.each([
 // A commit's outside view is its own: an exterior edit another commit queued behind a build, or an
 // exterior commit before an interior one, does not take the build's walls up between its steps.
 async function followBuildAmid(setup: {
-  first: 'build' | 'exterior'
+  first: 'build' | 'exterior' | 'mixed'
   next: 'exterior' | 'build'
   /** When the second commit lands, on the reveal clock; with the first when absent. */
   nextAtMs?: number
+  /** How many furnishings the edit moves besides the window: the more, the longer it plays. */
+  moved?: number
+  /** Follow's clock per reveal tick: 0.02 s runs it slower than the reveal. */
+  frameS?: number
 }) {
   const building = BuildingNode.parse({ id: 'building_follow' })
   const level = LevelNode.parse({ id: 'level_ground', parentId: building.id, level: 0 })
@@ -690,13 +694,21 @@ async function followBuildAmid(setup: {
       dimensions: [2, 1, 1],
     },
   })
+  const restings = [
+    resting,
+    ...Array.from({ length: (setup.moved ?? 1) - 1 }, (_, index) =>
+      ItemNode.parse({ ...resting, id: `item_sofa_resting${index + 1}` }),
+    ),
+  ]
   building.children = [level.id]
-  level.children = [wall.id, resting.id]
+  level.children = [wall.id, ...restings.map((node) => node.id)]
   wall.children = [window.id]
   useScene
     .getState()
     .setScene(
-      Object.fromEntries([building, level, wall, window, resting].map((node) => [node.id, node])),
+      Object.fromEntries(
+        [building, level, wall, window, ...restings].map((node) => [node.id, node]),
+      ),
       [building.id],
     )
   useViewer.getState().setSelection({ buildingId: building.id, levelId: level.id })
@@ -712,7 +724,7 @@ async function followBuildAmid(setup: {
   shell.position.set(2, 0.5, 2)
   renderer.scene.instance.getObjectByName('scene-renderer')!.add(shell)
   shell.updateWorldMatrix(true, true)
-  for (const id of ['window_east', 'wall_east', resting.id])
+  for (const id of ['window_east', 'wall_east', ...restings.map((node) => node.id)])
     sceneRegistry.nodes.set(id, new Group())
   const sofa = ItemNode.parse({
     id: 'item_sofa',
@@ -744,33 +756,42 @@ async function followBuildAmid(setup: {
   // A commit with a window and a sofa in it: the window takes it outdoors.
   const moveWindow = () => {
     useScene.getState().updateNode('window_east', { position: [2.5, 1.2, 0] } as never)
-    useScene.getState().updateNode(resting.id, { position: [2.5, 0, 2.5] } as never)
+    for (const node of restings)
+      useScene.getState().updateNode(node.id, { position: [2.5, 0, 2.5] } as never)
   }
   const playing = () =>
     Array.from({ length: 12 }, (_, i) => `item_sofa${i === 0 ? '' : i}`).some((id) =>
       isNodeRevealing(id),
     )
+  const editing = () =>
+    isNodeRevealing('window_east') || restings.some((node) => isNodeRevealing(node.id))
   const upDuringBuild: number[] = []
+  const cutawayDuringEdit: number[] = []
   let at = 0
   const stop = useViewer.subscribe((state, before) => {
     if (state.wallMode === 'up' && before.wallMode !== 'up' && playing()) upDuringBuild.push(at)
+    if (state.wallMode === 'cutaway' && before.wallMode !== 'cutaway' && editing())
+      cutawayDuringEdit.push(at)
   })
   driver = startConstructionReveal({ reveals: (commit) => commit.author === 'agent' })
   usePointAsk.getState().setBusy(true)
   await act(async () => {
-    const commit = (kind: 'build' | 'exterior') =>
-      runAsSceneCommitAuthor('agent', kind === 'build' ? buildSofa : moveWindow)
+    const commit = (kind: 'build' | 'exterior' | 'mixed') =>
+      runAsSceneCommitAuthor('agent', () => {
+        if (kind !== 'exterior') buildSofa()
+        if (kind !== 'build') moveWindow()
+      })
     commit(setup.first)
     if (setup.nextAtMs === undefined) commit(setup.next)
     for (at = 50; at <= 12000; at += 50) {
       if (at === setup.nextAtMs) commit(setup.next)
       driver!.tick(at)
-      await renderer!.advanceFrames(1, 0.02)
+      await renderer!.advanceFrames(1, setup.frameS ?? 0.02)
     }
     await renderer!.advanceFrames(10, 0.1)
   })
   stop()
-  return { upDuringBuild }
+  return { upDuringBuild, cutawayDuringEdit }
 }
 
 test('an exterior edit queued behind a build does not put the walls up while the build plays', async () => {
@@ -791,4 +812,15 @@ test('an exterior edit that has played does not take the next build outdoors', a
   expect(upDuringBuild).toEqual([])
   // The walls the edit put up are cut away again for the build, once.
   expect(useViewer.getState().wallMode).toBe('cutaway')
+})
+
+test('the walls stay up while an edit seen from outside plays, whatever else starts beside it', async () => {
+  const { cutawayDuringEdit } = await followBuildAmid({
+    first: 'exterior',
+    next: 'build',
+    nextAtMs: 300,
+    moved: 16,
+    frameS: 0.05,
+  })
+  expect(cutawayDuringEdit).toEqual([])
 })
